@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Latent Lab — Cross-Domain Implicit Matrix Factorization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#ffffff; --bg2:#f7f9fc; --panel:#ffffff;
+  --line:#e6ebf3; --line2:#d3dcea;
+  --ink:#16213a; --muted:#5b6883; --dim:#95a2ba;
+  --user:#d98324; --item:#1668b0; --good:#1a9e5c; --bad:#d24545; --priv:#6a4fc7;
+  --shadow:0 10px 34px rgba(20,45,90,.08);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:"Inter",system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(rgba(30,70,140,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(30,70,140,.028) 1px,transparent 1px);
+  background-size:36px 36px;min-height:100vh;
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+/* ---- nav ---- */
+header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.nav{max-width:1140px;margin:0 auto;padding:12px 22px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:9px;font-family:"Space Grotesk";font-weight:700;letter-spacing:.3px;font-size:17px;cursor:pointer}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--user);display:inline-block}
+.brand small{font-family:"IBM Plex Mono";font-weight:400;font-size:10px;color:var(--dim);letter-spacing:2px;text-transform:uppercase}
+.tabs{display:flex;gap:3px;flex-wrap:wrap;margin-left:auto}
+.tab{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);font-family:"IBM Plex Mono";font-size:12px;padding:8px 11px;border-radius:9px;cursor:pointer;display:flex;gap:7px;align-items:center;transition:.16s}
+.tab .n{color:var(--dim);font-size:10px}
+.tab:hover{color:var(--ink);background:var(--bg2)}
+.tab.active{color:var(--ink);background:var(--bg2);border-color:var(--line2)}
+.tab.active .n{color:var(--user)}
+
+main{max-width:1140px;margin:0 auto;padding:34px 22px 90px}
+.page{display:none;animation:fade .4s ease}
+.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.page{animation:none}}
+
+.eyebrow{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--user);margin:0 0 10px}
+h1.title{font-family:"Space Grotesk";font-weight:700;font-size:clamp(25px,3.8vw,38px);line-height:1.1;margin:0 0 12px;letter-spacing:-.4px}
+.lede{color:var(--muted);max-width:64ch;font-size:15.5px;margin:0 0 26px}
+.lede b{color:var(--ink);font-weight:600}
+.tag-user{color:var(--user);font-weight:600}.tag-item{color:var(--item);font-weight:600}
+.tag-good{color:var(--good);font-weight:600}.tag-bad{color:var(--bad);font-weight:600}.tag-priv{color:var(--priv);font-weight:600}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);gap:24px;align-items:start}
+@media(max-width:880px){.grid2{grid-template-columns:1fr}}
+.stack{display:grid;grid-template-columns:1fr;gap:24px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:var(--shadow)}
+.section-k{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--user);margin:0 0 4px}
+.panel h3{font-family:"Space Grotesk";font-weight:600;font-size:16px;margin:0 0 6px}
+.panel p.sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+.btn{appearance:none;border:1px solid var(--line2);background:#fff;color:var(--ink);font-family:"IBM Plex Mono";font-size:12.5px;padding:9px 15px;border-radius:9px;cursor:pointer;transition:.15s;letter-spacing:.2px}
+.btn:hover{border-color:var(--user);color:#8a4d05;box-shadow:0 0 0 3px rgba(217,131,36,.12)}
+.btn.primary{background:var(--user);color:#fff;border-color:var(--user);font-weight:600}
+.btn.primary:hover{color:#fff;box-shadow:0 6px 18px rgba(217,131,36,.3)}
+.btn.ghost{background:transparent}
+.range{display:flex;flex-direction:column;gap:6px;min-width:210px}
+.range label{font-family:"IBM Plex Mono";font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between}
+.range label b{color:var(--user);font-weight:600}
+input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:6px;background:var(--line2);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--user);cursor:pointer;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--user);cursor:pointer;border:2px solid #fff}
+.readout{font-family:"IBM Plex Mono";font-size:12.5px;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:14px}
+.readout .k{color:var(--dim)}.readout .v{color:var(--ink)}
+.hint{font-family:"IBM Plex Mono";font-size:11px;color:var(--dim);margin-top:10px}
+.chips{display:flex;gap:14px;flex-wrap:wrap;font-family:"IBM Plex Mono";font-size:11.5px;color:var(--muted);margin-top:10px}
+.chip{display:flex;align-items:center;gap:7px}
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.06)}
+.eq{font-family:"IBM Plex Mono";font-size:13px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--muted);overflow-x:auto}
+.eq b{color:var(--ink)}
+.eq .hl{color:#8a4d05;background:rgba(217,131,36,.14);padding:1px 4px;border-radius:4px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.note{font-size:13px;color:var(--muted);margin-top:14px;border-left:3px solid var(--line2);padding-left:12px}
+.footer{max-width:1140px;margin:0 auto;padding:0 22px 44px;color:var(--dim);font-family:"IBM Plex Mono";font-size:11px}
+
+/* matrix tables */
+table.mat{border-collapse:separate;border-spacing:5px}
+table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-family:"IBM Plex Mono";font-size:12px;transition:.2s}
+.mlabel{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.5px;margin-bottom:6px}
+.op{font-family:"Space Grotesk";font-size:26px;color:var(--dim);padding:0 6px;align-self:center}
+.decomp{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.matcol{display:flex;flex-direction:column;align-items:center}
+
+/* cover */
+.cover{min-height:70vh;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;max-width:820px}
+.cover .kicker{font-family:"IBM Plex Mono";font-size:11.5px;letter-spacing:3px;text-transform:uppercase;color:var(--user);margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.cover .kicker::before{content:"";width:30px;height:1px;background:var(--user)}
+.cover h1{font-family:"Space Grotesk";font-weight:700;font-size:clamp(30px,5.4vw,54px);line-height:1.06;letter-spacing:-1px;margin:0 0 18px}
+.cover h1 em{font-style:normal;color:var(--user)}
+.cover .subtitle{color:var(--muted);font-size:18px;max-width:56ch;margin:0 0 40px}
+.credits{display:flex;flex-wrap:wrap;gap:38px;margin-bottom:40px}
+.credit .role{font-family:"IBM Plex Mono";font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.credit .name{font-family:"Space Grotesk";font-weight:600;font-size:19px;color:var(--ink)}
+.credit .name span{color:var(--muted);font-weight:400;font-size:14px;font-family:"Inter"}
+.cover .affil{font-family:"IBM Plex Mono";font-size:12px;color:var(--dim);letter-spacing:1px;margin-bottom:34px}
+.cover .enter{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.map{display:flex;gap:10px;flex-wrap:wrap;margin-top:44px}
+.mapcard{border:1px solid var(--line);border-radius:12px;padding:12px 15px;min-width:150px;cursor:pointer;transition:.16s;background:#fff}
+.mapcard:hover{border-color:var(--user);box-shadow:var(--shadow);transform:translateY(-2px)}
+.mapcard .mn{font-family:"IBM Plex Mono";font-size:10px;color:var(--user);letter-spacing:1px}
+.mapcard .mt{font-family:"Space Grotesk";font-weight:600;font-size:14px;margin-top:3px}
+.mapcard .md{font-size:11.5px;color:var(--muted);margin-top:3px}
+</style>
+</head>
+<body>
+<header>
+  <div class="nav">
+    <div class="brand" id="home"><span class="dot"></span>Latent&nbsp;Lab <small>cross-domain imf</small></div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-p="0"><span class="n">00</span>Cover</button>
+      <button class="tab" data-p="1"><span class="n">01</span>Matrix Factorization</button>
+      <button class="tab" data-p="2"><span class="n">02</span>Implicit Feedback</button>
+      <button class="tab" data-p="3"><span class="n">03</span>Scaling&nbsp;d</button>
+      <button class="tab" data-p="4"><span class="n">04</span>Secure Aggregation</button>
+      <button class="tab" data-p="5"><span class="n">05</span>Differential Privacy</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ PAGE 0 : COVER ============ -->
+<section class="page active" id="page0">
+  <div class="cover">
+    <div class="kicker">Interactive Companion · Doctoral Research</div>
+    <h1>Improving the Security of<br><em>Cross-Domain Implicit</em><br>Matrix Factorization</h1>
+    <p class="subtitle">A visual walkthrough of how recommenders learn latent factors, and how two
+    domains can share them safely — through secure aggregation and differential privacy.</p>
+    <div class="credits">
+      <div class="credit">
+        <div class="role">Presented by</div>
+        <div class="name">Maju Sumanto <span>· PhD Student</span></div>
+      </div>
+      <div class="credit">
+        <div class="role">Supervised by</div>
+        <div class="name">Professor Masahiro Mambo</div>
+      </div>
+    </div>
+    <div class="affil">Kanazawa University · Japan</div>
+    <div class="enter">
+      <button class="btn primary" id="begin">Begin the walkthrough →</button>
+      <span class="hint" style="margin:0">five interactive stations · ~5 minutes</span>
+    </div>
+    <div class="map" id="cover-map"></div>
+  </div>
+</section>
+
+<!-- ============ PAGE 1 : BASIC MF (two sections) ============ -->
+<section class="page" id="page1">
+  <p class="eyebrow">01 — the core idea</p>
+  <h1 class="title">One big ratings table, two small factor tables.</h1>
+  <p class="lede">A rating is just the dot product of a short <span class="tag-user">user vector</span> and
+  <span class="tag-item">item vector</span>. First see how the product <b>U × Vᵀ</b> reconstructs the whole table —
+  then watch those vectors <b>learn</b> until the reconstruction matches what we actually observed.</p>
+
+  <div class="stack">
+    <!-- section A: decomposition -->
+    <div class="panel">
+      <p class="section-k">Section A · approximation</p>
+      <h3>R ≈ U × Vᵀ</h3>
+      <p class="sub">Each predicted cell is one row of <span class="tag-user">U</span> times one column of
+      <span class="tag-item">Vᵀ</span>. Watch the highlight sweep the table.</p>
+      <div class="decomp" id="mf-decomp"></div>
+      <div class="readout" id="mf-dot">Computing predictions…</div>
+      <div class="controls">
+        <button class="btn" id="mf-anim">⏸ Pause sweep</button>
+        <span class="hint" style="margin:0">or hover any predicted cell</span>
+      </div>
+    </div>
+
+    <!-- section B: learning -->
+    <div class="panel">
+      <p class="section-k">Section B · learning</p>
+      <h3>How the two matrices learn</h3>
+      <p class="sub">The optimiser nudges every vector to fit the <em>known</em> ratings; the blanks then follow
+      from geometry. Train and watch the factors — and Section A above — settle.</p>
+      <div class="grid2">
+        <div>
+          <svg id="mf-space" viewBox="0 0 420 320" role="img" aria-label="latent space of user and item vectors"></svg>
+          <div class="chips">
+            <span class="chip"><span class="sw" style="background:var(--user)"></span>user vector</span>
+            <span class="chip"><span class="sw" style="background:var(--item)"></span>item vector</span>
+          </div>
+        </div>
+        <div>
+          <svg id="mf-loss" viewBox="0 0 420 200" role="img" aria-label="training error curve"></svg>
+          <div class="controls">
+            <button class="btn primary" id="mf-train">▶ Train</button>
+            <button class="btn ghost" id="mf-reset">Reset</button>
+            <div class="readout mono" style="margin:0;flex:1" id="mf-status">RMSE — · epoch 0</div>
+          </div>
+          <div class="note">Similar taste → vectors point the same way → large dot product → high predicted rating.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PAGE 2 : IMPLICIT MF ============ -->
+<section class="page" id="page2">
+  <p class="eyebrow">02 — no stars, just clicks</p>
+  <h1 class="title">Most feedback isn't a rating. It's a footprint.</h1>
+  <p class="lede">Netflix sees a <b>watch</b>, Amazon a <b>buy</b>, Spotify a <b>play</b> — a plain <span class="mono">1</span>,
+  and otherwise silence. Silence isn't "dislike," it's "maybe unseen," so implicit MF trusts the ones and stays soft
+  on the zeros. Toggle cells and watch <span class="tag-good">recommendations</span> surface.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>Who watched what</h3>
+      <p class="sub">Click a cell to toggle a watch. Ann, Bob, Cy, Dee &amp; five titles.</p>
+      <svg id="imf-grid" viewBox="0 0 460 300" role="img" aria-label="implicit interaction grid"></svg>
+      <div class="chips">
+        <span class="chip"><span class="sw" style="background:var(--user)"></span>watched (1)</span>
+        <span class="chip"><span class="sw" style="background:#eef2f7"></span>not watched</span>
+        <span class="chip"><span class="sw" style="background:var(--good)"></span>recommended</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Predicted scores</h3>
+      <p class="sub">Two forces shape every score, from the iALS loss.</p>
+      <svg id="imf-scores" viewBox="0 0 460 300" role="img" aria-label="predicted score heatmap"></svg>
+      <div class="eq" style="margin-top:14px"><b>pull&nbsp;↑</b> watched pairs toward 1&nbsp;·&nbsp;<b>push&nbsp;↓</b> every pair toward 0<br>→ unseen items that still score high become <span style="color:var(--good)">recommendations</span>.</div>
+      <div class="note">Ann never watched <b>m5</b>, yet her twin Bob did — so m5 rises to the top for Ann.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PAGE 3 : SCALING d (two synced auto sections) ============ -->
+<section class="page" id="page3">
+  <p class="eyebrow">03 — the new update rule</p>
+  <h1 class="title">Turn up <span class="tag-user">d</span> for richer factors — the cost stays friendly.</h1>
+  <p class="lede">Both panels run the <b>same</b> latent dimension as it climbs automatically. The
+  <span class="tag-bad">standard</span> all-pairs cost is dominated by the catalog and balloons; the
+  <span class="tag-good">proposed</span> Gram-trick update grows only like <b>d²</b> and each factor solves
+  independently, in parallel.</p>
+
+  <div class="eq" style="margin-bottom:22px">
+    [ <b>Bᵀ diag(c²) B</b> <span class="hl">+ (ρ + λr²) I<sub>d</sub></span> ] a = Bᵀ(p ∘ c²) + ρh
+    &nbsp;→&nbsp; one <span class="hl">d×d</span> solve per user/item.
+  </div>
+
+  <div class="controls" style="margin-bottom:18px">
+    <button class="btn primary" id="d-play">⏸ Pause</button>
+    <div class="readout mono" style="margin:0" id="d-big">latent dimension  d = 1</div>
+    <span class="hint" style="margin:0">10k users · 40k items · 200k interactions</span>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <p class="section-k" style="color:var(--bad)">Standard approach</p>
+      <h3>All-pairs cost balloons with the catalog</h3>
+      <p class="sub">Comparing every user against every item, per dimension — <span class="mono">O(d·|U|·|I|)</span>.</p>
+      <svg id="d-naive" viewBox="0 0 900 220" role="img" aria-label="standard cost curve"></svg>
+    </div>
+    <div class="panel">
+      <p class="section-k" style="color:var(--good)">Proposed method</p>
+      <h3>Gram-trick keeps it low — and parallel</h3>
+      <p class="sub">One reused d×d Gram matrix — <span class="mono">O(d²·(|U|+|I|) + d·|S|)</span>, solved per factor independently.</p>
+      <svg id="d-prop" viewBox="0 0 900 220" role="img" aria-label="proposed cost curve"></svg>
+      <div class="note" id="d-verdict"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PAGE 4 : SECURE AGGREGATION ============ -->
+<section class="page" id="page4">
+  <p class="eyebrow">04 — share the sum, not the secret</p>
+  <h1 class="title">Four companies. One shared total. No one's numbers exposed.</h1>
+  <p class="lede">Each domain must add its <span class="tag-user">factor update</span> to a shared average without
+  revealing it. Every pair shares a secret mask: one adds it, the other subtracts it. Broadcasts look like
+  <span class="tag-bad">noise</span>, but summed the masks <b>cancel</b> and only the true total survives.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>The masking round</h3>
+      <p class="sub">Set each domain's secret value, then walk the round.</p>
+      <div id="sa-inputs" class="controls" style="margin-top:0;margin-bottom:12px"></div>
+      <div class="controls" style="margin-top:0">
+        <button class="btn" id="sa-mask">1 · Add masks</button>
+        <button class="btn" id="sa-send">2 · Broadcast</button>
+        <button class="btn primary" id="sa-sum">3 · Aggregate</button>
+        <button class="btn ghost" id="sa-reset">Reset</button>
+      </div>
+      <div class="readout" id="sa-readout">Masks are drawn but not yet applied.</div>
+      <div class="chips">
+        <span class="chip"><span class="sw" style="background:var(--user)"></span>true value</span>
+        <span class="chip"><span class="sw" style="background:var(--priv)"></span>pairwise mask</span>
+        <span class="chip"><span class="sw" style="background:var(--bad)"></span>masked broadcast</span>
+        <span class="chip"><span class="sw" style="background:var(--good)"></span>recovered sum</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>&nbsp;</h3>
+      <svg id="sa-stage" viewBox="0 0 460 380" role="img" aria-label="secure aggregation ring"></svg>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PAGE 5 : DIFFERENTIAL PRIVACY ============ -->
+<section class="page" id="page5">
+  <p class="eyebrow">05 — deniability by design</p>
+  <h1 class="title">Add just enough noise to make one person invisible.</h1>
+  <p class="lede">Even a shared embedding can leak. Differential privacy blurs it so two datasets differing by one
+  user look <b>almost identical</b>. Shrink the budget <span class="tag-priv">ε</span> and the curves drift together —
+  the attacker loses the trail, at a measured cost to accuracy.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>Indistinguishability</h3>
+      <p class="sub">Two neighbouring datasets (differ by one user) → two output distributions.</p>
+      <svg id="dp-curves" viewBox="0 0 460 260" role="img" aria-label="two gaussian output distributions"></svg>
+      <div class="range" style="margin-top:16px;min-width:100%">
+        <label>privacy budget ε <b id="dp-eps">1.00</b></label>
+        <input type="range" id="dp-slider" min="10" max="500" value="100" step="1"/>
+      </div>
+      <div class="hint">smaller ε = stronger privacy = more noise (σ ∝ 1/ε)</div>
+    </div>
+    <div class="panel">
+      <h3>The trade-off</h3>
+      <p class="sub">A jittering sample, the attacker's odds, and the price in accuracy.</p>
+      <svg id="dp-side" viewBox="0 0 460 260" role="img" aria-label="privacy utility tradeoff"></svg>
+      <div class="readout" id="dp-readout"></div>
+      <div class="eq" style="margin-top:12px">σ = <b>B·√(2 ln(1.25/δ)) / ε</b> · densities within a factor of <b>e^ε</b></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<div class="footer">Latent Lab · companion to “Improving the Security of Cross-Domain Implicit Matrix Factorization.” Figures are illustrative.</div>
+
+<script>
+const SVGNS="http://www.w3.org/2000/svg";
+function el(t,a){const e=document.createElementNS(SVGNS,t);if(a)for(const k in a)e.setAttribute(k,a[k]);return e;}
+function txt(el_,s){el_.textContent=s;return el_;}
+function clear(n){while(n.firstChild)n.removeChild(n.firstChild);}
+function lerp(a,b,t){return a+(b-a)*t;}
+function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+function fmt(n){if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"k";return Math.round(n).toString();}
+// white-theme heat: light -> item blue
+function heat(v){v=clamp(v,0,1);const c1=[237,242,248],c2=[22,104,176];const r=Math.round(lerp(c1[0],c2[0],v)),g=Math.round(lerp(c1[1],c2[1],v)),b=Math.round(lerp(c1[2],c2[2],v));return `rgb(${r},${g},${b})`;}
+
+const tabs=[...document.querySelectorAll('.tab')];
+const pages=[...document.querySelectorAll('.page')];
+const INIT=[null,initMF,initIMF,initD,initSA,initDP];
+const inited=[true,false,false,false,false,false];
+function show(i){
+  tabs.forEach((t,k)=>t.classList.toggle('active',k===i));
+  pages.forEach((p,k)=>p.classList.toggle('active',k===i));
+  if(INIT[i]&&!inited[i]){INIT[i]();inited[i]=true;}
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+tabs.forEach(t=>t.addEventListener('click',()=>show(+t.dataset.p)));
+document.getElementById('home').addEventListener('click',()=>show(0));
+document.getElementById('begin').addEventListener('click',()=>show(1));
+
+// cover map cards
+const stations=[
+  {n:'01',t:'Matrix Factorization',d:'ratings ≈ U × Vᵀ'},
+  {n:'02',t:'Implicit Feedback',d:'clicks, not stars'},
+  {n:'03',t:'Scaling d',d:'why bigger is fine'},
+  {n:'04',t:'Secure Aggregation',d:'share the sum only'},
+  {n:'05',t:'Differential Privacy',d:'noise as cover'}
+];
+const cm=document.getElementById('cover-map');
+stations.forEach((s,idx)=>{
+  const c=document.createElement('div');c.className='mapcard';
+  c.innerHTML=`<div class="mn">${s.n}</div><div class="mt">${s.t}</div><div class="md">${s.d}</div>`;
+  c.addEventListener('click',()=>show(idx+1));cm.appendChild(c);
+});
+
+/* ============================================================
+   PAGE 1 — BASIC MF : Section A (decomposition) + Section B (learning)
+   ============================================================ */
+function initMF(){
+  const R=[[5,4,0,1,0],[4,5,1,0,2],[1,0,5,4,0],[0,1,4,5,1],[2,0,0,1,5]];
+  const nU=5,nI=5,d=2;
+  const uNames=["U1","U2","U3","U4","U5"], iNames=["I1","I2","I3","I4","I5"];
+  let U,V,epoch,running=false,raf=null,hist=[];
+  let hu=0,hi=0,sweep=true,sweepTimer=null;
+  const rnd=()=>(Math.random()*2-1)*0.3;
+  const pred=(u,i)=>U[u][0]*V[i][0]+U[u][1]*V[i][1];
+  function rmse(){let se=0,n=0;for(let u=0;u<nU;u++)for(let i=0;i<nI;i++)if(R[u][i]>0){const e=R[u][i]-pred(u,i);se+=e*e;n++;}return Math.sqrt(se/n);}
+  function reset(){
+    U=Array.from({length:nU},()=>[rnd(),rnd()]);V=Array.from({length:nI},()=>[rnd(),rnd()]);
+    epoch=0;running=false;hist=[];if(raf)cancelAnimationFrame(raf);
+    renderAll();
+  }
+  function sgd(){const lr=0.012,lam=0.06;for(let u=0;u<nU;u++)for(let i=0;i<nI;i++){if(R[u][i]===0)continue;const e=R[u][i]-pred(u,i);for(let k=0;k<d;k++){const uk=U[u][k],vk=V[i][k];U[u][k]+=lr*(e*vk-lam*uk);V[i][k]+=lr*(e*uk-lam*vk);}}epoch++;}
+
+  const decomp=document.getElementById('mf-decomp');
+  const dotBox=document.getElementById('mf-dot');
+  function renderDecomp(){
+    clear(decomp);
+    decomp.appendChild(matBlock('R̂  (≈ R)',(u,i)=>pred(u,i),'pred'));
+    const op1=document.createElement('div');op1.className='op';op1.textContent='=';decomp.appendChild(op1);
+    decomp.appendChild(matBlock('U  (users×2)',(u,k)=>U[u][k],'U',nU,d));
+    const op2=document.createElement('div');op2.className='op';op2.textContent='×';decomp.appendChild(op2);
+    decomp.appendChild(matBlock('Vᵀ  (2×items)',(k,i)=>V[i][k],'Vt',d,nI));
+    // formula
+    const t=`R̂[${uNames[hu]},${iNames[hi]}] = (${U[hu][0].toFixed(2)})(${V[hi][0].toFixed(2)}) + (${U[hu][1].toFixed(2)})(${V[hi][1].toFixed(2)}) = ${pred(hu,hi).toFixed(2)}`;
+    dotBox.innerHTML=`<span class="v">${t}</span>`;
+  }
+  function matBlock(label,valfn,kind,rows,cols){
+    const c=document.createElement('div');c.className='matcol';
+    const l=document.createElement('div');l.className='mlabel';
+    l.style.color=kind==='U'?'var(--user)':(kind==='Vt'?'var(--item)':'var(--dim)');
+    l.textContent=label;c.appendChild(l);
+    const table=document.createElement('table');table.className='mat';
+    const nr=kind==='pred'?nU:rows, nc=kind==='pred'?nI:cols;
+    for(let r=0;r<nr;r++){
+      const tr=document.createElement('tr');
+      for(let cc=0;cc<nc;cc++){
+        const td=document.createElement('td');
+        if(kind==='pred'){
+          const v=valfn(r,cc);const known=R[r][cc]>0;const norm=clamp((v-0.5)/5,0,1);
+          const isHi=(r===hu&&cc===hi);
+          td.style.background=isHi?'rgba(217,131,36,.9)':heat(norm);
+          td.style.color=isHi?'#fff':(norm>.55?'#fff':'var(--ink)');
+          td.textContent=v.toFixed(1);
+          td.style.cursor='pointer';td.dataset.r=r;td.dataset.c=cc;
+          td.addEventListener('mouseenter',()=>{sweep=false;setBtn();hu=r;hi=cc;renderAll();});
+        }else{
+          const v=valfn(r,cc);
+          const hiRow=(kind==='U'&&r===hu), hiCol=(kind==='Vt'&&cc===hi);
+          td.style.background=(hiRow||hiCol)?(kind==='U'?'rgba(217,131,36,.16)':'rgba(22,104,176,.14)'):'var(--bg2)';
+          td.style.color=(hiRow||hiCol)?(kind==='U'?'#8a4d05':'#0d4a82'):'var(--muted)';
+          td.style.border='1px solid var(--line)';
+          td.textContent=v.toFixed(2);
+        }
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    c.appendChild(table);return c;
+  }
+
+  // latent space
+  const space=document.getElementById('mf-space');
+  function renderSpace(){
+    clear(space);const W=420,H=320,cx=W/2,cy=H/2;
+    let m=0.6;for(let u=0;u<nU;u++)for(let k=0;k<d;k++)m=Math.max(m,Math.abs(U[u][k]));
+    for(let i=0;i<nI;i++)for(let k=0;k<d;k++)m=Math.max(m,Math.abs(V[i][k]));
+    const sc=(Math.min(W,H)/2-40)/m;
+    space.appendChild(el('line',{x1:20,y1:cy,x2:W-20,y2:cy,stroke:'var(--line2)','stroke-width':1}));
+    space.appendChild(el('line',{x1:cx,y1:20,x2:cx,y2:H-20,stroke:'var(--line2)','stroke-width':1}));
+    const P=v=>[cx+v[0]*sc,cy-v[1]*sc];
+    const a=P(U[hu]),b=P(V[hi]);
+    space.appendChild(el('line',{x1:cx,y1:cy,x2:a[0],y2:a[1],stroke:'var(--user)','stroke-width':2,opacity:.5}));
+    space.appendChild(el('line',{x1:cx,y1:cy,x2:b[0],y2:b[1],stroke:'var(--item)','stroke-width':2,opacity:.5}));
+    for(let i=0;i<nI;i++){const p=P(V[i]);const on=i===hi;space.appendChild(el('circle',{cx:p[0],cy:p[1],r:on?7:5,fill:'var(--item)',opacity:on?1:.85}));space.appendChild(txt(el('text',{x:p[0]+8,y:p[1]+4,fill:'var(--item)','font-size':10,'font-family':'IBM Plex Mono'}),iNames[i]));}
+    for(let u=0;u<nU;u++){const p=P(U[u]);const on=u===hu;space.appendChild(el('circle',{cx:p[0],cy:p[1],r:on?7:5,fill:'var(--user)',opacity:on?1:.9}));space.appendChild(txt(el('text',{x:p[0]+8,y:p[1]+4,fill:'var(--user)','font-size':10,'font-family':'IBM Plex Mono'}),uNames[u]));}
+  }
+
+  // loss curve
+  const lossSVG=document.getElementById('mf-loss');
+  const status=document.getElementById('mf-status');
+  function renderLoss(){
+    clear(lossSVG);const W=420,H=200,pad=32,base=H-26;
+    lossSVG.appendChild(el('line',{x1:pad,y1:base,x2:W-14,y2:base,stroke:'var(--line2)','stroke-width':1}));
+    lossSVG.appendChild(el('line',{x1:pad,y1:16,x2:pad,y2:base,stroke:'var(--line2)','stroke-width':1}));
+    lossSVG.appendChild(txt(el('text',{x:pad,y:12,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'RMSE'));
+    lossSVG.appendChild(txt(el('text',{x:W-40,y:base+16,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'epoch'));
+    if(hist.length>1){
+      const maxE=Math.max(600,hist.length),maxL=Math.max(...hist,0.1);
+      let dstr='';hist.forEach((L,k)=>{const x=pad+(k/maxE)*(W-pad-14);const y=base-(L/maxL)*(base-20);dstr+=(k?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';});
+      lossSVG.appendChild(el('path',{d:dstr,fill:'none',stroke:'var(--user)','stroke-width':2.5}));
+      const lastx=pad+((hist.length-1)/maxE)*(W-pad-14),lasty=base-(hist[hist.length-1]/maxL)*(base-20);
+      lossSVG.appendChild(el('circle',{cx:lastx,cy:lasty,r:4,fill:'var(--user)'}));
+    }
+    status.textContent=`RMSE ${rmse().toFixed(3)} · epoch ${epoch}`;
+  }
+
+  function renderAll(){renderDecomp();renderSpace();renderLoss();}
+
+  function loop(){if(!running)return;for(let s=0;s<4;s++){sgd();hist.push(rmse());}renderAll();if(epoch>600){running=false;trainBtn.textContent='▶ Train';return;}raf=requestAnimationFrame(loop);}
+  const trainBtn=document.getElementById('mf-train');
+  trainBtn.addEventListener('click',()=>{running=!running;trainBtn.textContent=running?'⏸ Pause':'▶ Train';if(running)loop();});
+  document.getElementById('mf-reset').addEventListener('click',()=>{trainBtn.textContent='▶ Train';reset();});
+
+  const animBtn=document.getElementById('mf-anim');
+  function setBtn(){animBtn.textContent=sweep?'⏸ Pause sweep':'▶ Resume sweep';}
+  animBtn.addEventListener('click',()=>{sweep=!sweep;setBtn();});
+  sweepTimer=setInterval(()=>{if(!sweep)return;hi++;if(hi>=nI){hi=0;hu=(hu+1)%nU;}renderAll();},900);
+
+  reset();setBtn();
+}
+
+/* ============================================================
+   PAGE 2 — IMPLICIT MF (iALS d=2)
+   ============================================================ */
+function initIMF(){
+  const uNames=["Ann","Bob","Cy","Dee"], iNames=["m1","m2","m3","m4","m5"];
+  const nU=4,nI=5,alpha=25,lam=0.1;
+  let P=[[1,1,0,0,0],[1,1,0,0,1],[0,0,1,1,0],[0,0,1,1,0]];
+  let X=[],Y=[],S=[];
+  function solve2(A,b){const det=A[0][0]*A[1][1]-A[0][1]*A[1][0];if(Math.abs(det)<1e-9)return[0,0];return[(b[0]*A[1][1]-b[1]*A[0][1])/det,(A[0][0]*b[1]-A[1][0]*b[0])/det];}
+  function train(){
+    X=Array.from({length:nU},()=>[Math.random()*.1,Math.random()*.1]);
+    Y=Array.from({length:nI},()=>[Math.random()*.1,Math.random()*.1]);
+    for(let it=0;it<12;it++){
+      for(let u=0;u<nU;u++){let A=[[lam,0],[0,lam]],b=[0,0];for(let i=0;i<nI;i++){const c=1+alpha*P[u][i],p=P[u][i];for(let a=0;a<2;a++){for(let bb=0;bb<2;bb++)A[a][bb]+=c*Y[i][a]*Y[i][bb];b[a]+=c*p*Y[i][a];}}X[u]=solve2(A,b);}
+      for(let i=0;i<nI;i++){let A=[[lam,0],[0,lam]],b=[0,0];for(let u=0;u<nU;u++){const c=1+alpha*P[u][i],p=P[u][i];for(let a=0;a<2;a++){for(let bb=0;bb<2;bb++)A[a][bb]+=c*X[u][a]*X[u][bb];b[a]+=c*p*X[u][a];}}Y[i]=solve2(A,b);}
+    }
+    S=X.map(x=>Y.map(y=>x[0]*y[0]+x[1]*y[1]));
+  }
+  const gridSVG=document.getElementById('imf-grid'),scoreSVG=document.getElementById('imf-scores');
+  const cw=70,ch=44,ox=70,oy=54;
+  function drawGrid(){
+    clear(gridSVG);
+    iNames.forEach((nm,i)=>gridSVG.appendChild(txt(el('text',{x:ox+i*cw+cw/2,y:oy-16,fill:'var(--item)','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono'}),nm)));
+    uNames.forEach((nm,u)=>gridSVG.appendChild(txt(el('text',{x:ox-14,y:oy+u*ch+ch/2+4,fill:'var(--user)','font-size':12,'text-anchor':'end','font-family':'IBM Plex Mono'}),nm)));
+    for(let u=0;u<nU;u++)for(let i=0;i<nI;i++){
+      const x=ox+i*cw,y=oy+u*ch;const watched=P[u][i]===1;const rec=!watched&&S[u][i]>0.55;
+      const r=el('rect',{x,y,width:cw-8,height:ch-8,rx:8,fill:watched?'var(--user)':(rec?'rgba(26,158,92,.14)':'#eef2f7'),stroke:rec?'var(--good)':'var(--line)','stroke-width':rec?2:1,cursor:'pointer'});
+      r.addEventListener('click',()=>{P[u][i]=watched?0:1;train();drawGrid();drawScores();});
+      gridSVG.appendChild(r);
+      if(watched)gridSVG.appendChild(txt(el('text',{x:x+(cw-8)/2,y:y+(ch-8)/2+4,fill:'#fff','font-size':13,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),'1'));
+      else if(rec)gridSVG.appendChild(txt(el('text',{x:x+(cw-8)/2,y:y+(ch-8)/2+5,fill:'var(--good)','font-size':14,'text-anchor':'middle'}),'★'));
+    }
+  }
+  function drawScores(){
+    clear(scoreSVG);
+    iNames.forEach((nm,i)=>scoreSVG.appendChild(txt(el('text',{x:ox+i*cw+cw/2,y:oy-16,fill:'var(--item)','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono'}),nm)));
+    uNames.forEach((nm,u)=>scoreSVG.appendChild(txt(el('text',{x:ox-14,y:oy+u*ch+ch/2+4,fill:'var(--user)','font-size':12,'text-anchor':'end','font-family':'IBM Plex Mono'}),nm)));
+    for(let u=0;u<nU;u++)for(let i=0;i<nI;i++){const x=ox+i*cw,y=oy+u*ch;const v=clamp(S[u][i],0,1);
+      scoreSVG.appendChild(el('rect',{x,y,width:cw-8,height:ch-8,rx:8,fill:heat(v),stroke:'var(--line)','stroke-width':1}));
+      scoreSVG.appendChild(txt(el('text',{x:x+(cw-8)/2,y:y+(ch-8)/2+4,fill:v>.55?'#fff':'var(--muted)','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono'}),v.toFixed(2)));
+    }
+  }
+  train();drawGrid();drawScores();
+}
+
+/* ============================================================
+   PAGE 3 — SCALING d : two synced auto-running cost curves
+   ============================================================ */
+function initD(){
+  const Uu=10000,Ii=40000,Ss=200000,DMAX=64;
+  const naive=d=>d*Uu*Ii;
+  const prop =d=>d*d*(Uu+Ii)+d*Ss;
+  const yMin=1e5,yMax=3e10;
+  const svgN=document.getElementById('d-naive'),svgP=document.getElementById('d-prop');
+  const big=document.getElementById('d-big'),verdict=document.getElementById('d-verdict');
+  const playBtn=document.getElementById('d-play');
+  let dCur=1,playing=true,timer=null;
+
+  function drawCurve(svg,costFn,col,label){
+    clear(svg);const W=900,H=220,padL=70,padR=90,padT=18,base=H-34;
+    const X=d=>padL+((d-1)/(DMAX-1))*(W-padL-padR);
+    const Y=c=>base-((Math.log10(c)-Math.log10(yMin))/(Math.log10(yMax)-Math.log10(yMin)))*(base-padT);
+    // axes + log gridlines
+    [1e5,1e6,1e7,1e8,1e9,1e10].forEach(gy=>{const y=Y(gy);svg.appendChild(el('line',{x1:padL,y1:y,x2:W-padR,y2:y,stroke:'var(--line)','stroke-width':1}));svg.appendChild(txt(el('text',{x:padL-8,y:y+3,fill:'var(--dim)','font-size':9.5,'text-anchor':'end','font-family':'IBM Plex Mono'}),fmt(gy)));});
+    [1,8,16,24,32,40,48,56,64].forEach(gx=>{svg.appendChild(txt(el('text',{x:X(gx),y:base+16,fill:'var(--dim)','font-size':9.5,'text-anchor':'middle','font-family':'IBM Plex Mono'}),gx));});
+    svg.appendChild(txt(el('text',{x:(padL+W-padR)/2,y:H-4,fill:'var(--dim)','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono'}),'latent dimension d →'));
+    // faint full curve
+    let full='';for(let d=1;d<=DMAX;d++){const x=X(d),y=Y(costFn(d));full+=(d>1?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';}
+    svg.appendChild(el('path',{d:full,fill:'none',stroke:col,'stroke-width':1.2,opacity:.22}));
+    // bold up to dCur
+    let bold='';for(let d=1;d<=dCur;d++){const x=X(d),y=Y(costFn(d));bold+=(d>1?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';}
+    svg.appendChild(el('path',{d:bold,fill:'none',stroke:col,'stroke-width':3}));
+    // marker + value
+    const mx=X(dCur),my=Y(costFn(dCur));
+    svg.appendChild(el('line',{x1:mx,y1:padT,x2:mx,y2:base,stroke:col,'stroke-width':1,'stroke-dasharray':'3 3',opacity:.5}));
+    svg.appendChild(el('circle',{cx:mx,cy:my,r:6,fill:col,stroke:'#fff','stroke-width':2}));
+    svg.appendChild(txt(el('text',{x:clamp(mx+10,0,W-padR+4),y:my-10,fill:col,'font-size':13,'font-family':'IBM Plex Mono','font-weight':600}),fmt(costFn(dCur))+' ops'));
+  }
+  function frame(){
+    big.textContent=`latent dimension  d = ${dCur}`;
+    drawCurve(svgN,naive,'var(--bad)');
+    drawCurve(svgP,prop,'var(--good)');
+    const ratio=naive(dCur)/prop(dCur);
+    verdict.innerHTML=`At d=${dCur}: proposed = <b style="color:var(--good)">${fmt(prop(dCur))}</b> vs standard <b style="color:var(--bad)">${fmt(naive(dCur))}</b> — <b style="color:var(--good)">${ratio.toFixed(0)}× cheaper</b>, and every d×d solve runs on its own worker. Raise d for accuracy without fear.`;
+  }
+  function tick(){if(!playing)return;dCur++;if(dCur>DMAX)dCur=1;frame();}
+  function startTimer(){if(timer)clearInterval(timer);timer=setInterval(tick,650);}
+  playBtn.addEventListener('click',()=>{playing=!playing;playBtn.textContent=playing?'⏸ Pause':'▶ Play';});
+  frame();startTimer();
+}
+
+/* ============================================================
+   PAGE 4 — SECURE AGGREGATION
+   ============================================================ */
+function initSA(){
+  const N=4,names=["D1","D2","D3","D4"];
+  let w=[6,9,4,7],masks={},stage=0;
+  const svg=document.getElementById('sa-stage'),readout=document.getElementById('sa-readout'),inputs=document.getElementById('sa-inputs');
+  inputs.innerHTML='';
+  for(let i=0;i<N;i++){
+    const wrap=document.createElement('div');wrap.style.cssText='display:flex;flex-direction:column;gap:3px';
+    const lab=document.createElement('label');lab.className='mono';lab.style.cssText='font-size:11px;color:var(--user)';lab.textContent=names[i];
+    const inp=document.createElement('input');inp.type='number';inp.value=w[i];inp.min=0;inp.max=20;
+    inp.style.cssText='width:60px;background:#fff;border:1px solid var(--line2);color:var(--ink);border-radius:8px;padding:6px 8px;font-family:IBM Plex Mono;font-size:12px';
+    inp.addEventListener('change',()=>{w[i]=clamp(+inp.value||0,0,20);reset();});
+    wrap.appendChild(lab);wrap.appendChild(inp);inputs.appendChild(wrap);
+  }
+  function genMasks(){masks={};for(let i=0;i<N;i++)for(let j=i+1;j<N;j++)masks[i+'-'+j]=Math.floor(Math.random()*17-8);}
+  function signedMask(i){let m=0;for(let j=0;j<N;j++){if(j===i)continue;const key=i<j?i+'-'+j:j+'-'+i;const s=masks[key]||0;m+=(i<j?s:-s);}return m;}
+  function reset(){stage=0;masks={};draw();readout.textContent='Set values, then step through the round.';}
+  function pos(i){const cx=230,cy=185,r=125;const a=-Math.PI/2+i*2*Math.PI/N;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+  function draw(){
+    clear(svg);const cx=230,cy=185;
+    for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+      const a=pos(i),b=pos(j),on=stage>=1;
+      svg.appendChild(el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:on?'rgba(106,79,199,.4)':'var(--line2)','stroke-width':on?2:1,'stroke-dasharray':on?'':'4 4'}));
+      if(on){const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,s=masks[i+'-'+j];
+        const g=el('g',{});g.appendChild(el('circle',{cx:mx,cy:my,r:12,fill:stage>=3?'#eef2f7':'var(--priv)',opacity:stage>=3?.6:1}));
+        g.appendChild(txt(el('text',{x:mx,y:my+4,fill:stage>=3?'var(--dim)':'#fff','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),(s>=0?'+':'')+s));
+        if(stage>=3)g.appendChild(txt(el('text',{x:mx,y:my-16,fill:'var(--good)','font-size':13,'text-anchor':'middle'}),'✓'));
+        svg.appendChild(g);}
+    }
+    const trueSum=w.reduce((a,b)=>a+b,0);
+    svg.appendChild(el('circle',{cx,cy,r:34,fill:stage>=3?'var(--good)':'#fff',stroke:stage>=3?'var(--good)':'var(--line2)','stroke-width':2}));
+    svg.appendChild(txt(el('text',{x:cx,y:cy-2,fill:stage>=3?'#fff':'var(--dim)','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono'}),'Σ'));
+    svg.appendChild(txt(el('text',{x:cx,y:cy+13,fill:stage>=3?'#fff':'var(--muted)','font-size':13,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),stage>=3?trueSum:(stage>=2?'?':'')));
+    const defs=el('defs',{});const mk=el('marker',{id:'sa-arrow',markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});mk.appendChild(el('path',{d:'M0,0 L6,3 L0,6 Z',fill:stage>=3?'var(--good)':'var(--bad)'}));defs.appendChild(mk);svg.appendChild(defs);
+    for(let i=0;i<N;i++){
+      const p=pos(i),broadcast=w[i]+signedMask(i);let val,col,ring;
+      if(stage===0){val=w[i];col='var(--user)';ring='var(--user)';}
+      else if(stage===1){val=w[i]+' , m='+(signedMask(i)>=0?'+':'')+signedMask(i);col='var(--user)';ring='var(--priv)';}
+      else{val=broadcast;col='var(--bad)';ring='var(--bad)';}
+      if(stage>=2){const dx=cx-p[0],dy=cy-p[1],L=Math.hypot(dx,dy),sx=p[0]+dx/L*28,sy=p[1]+dy/L*28,ex=cx-dx/L*38,ey=cy-dy/L*38;
+        svg.appendChild(el('line',{x1:sx,y1:sy,x2:ex,y2:ey,stroke:stage>=3?'var(--good)':'var(--bad)','stroke-width':2,opacity:.55,'marker-end':'url(#sa-arrow)'}));}
+      svg.appendChild(el('circle',{cx:p[0],cy:p[1],r:26,fill:'#fff',stroke:ring,'stroke-width':2.5}));
+      svg.appendChild(txt(el('text',{x:p[0],y:p[1]-6,fill:'var(--dim)','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono'}),names[i]));
+      svg.appendChild(txt(el('text',{x:p[0],y:p[1]+11,fill:col,'font-size':stage===1?9:13,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),val));
+    }
+  }
+  document.getElementById('sa-mask').addEventListener('click',()=>{genMasks();stage=1;draw();readout.innerHTML='<span class="k">Pairwise masks drawn.</span> Each pair shares one secret: lower index <span style="color:var(--priv)">adds</span>, higher <span style="color:var(--priv)">subtracts</span>.';});
+  document.getElementById('sa-send').addEventListener('click',()=>{if(!Object.keys(masks).length)genMasks();stage=2;draw();const bc=w.map((v,i)=>v+signedMask(i));readout.innerHTML=`<span class="k">Broadcasts (look like noise):</span> <span class="v" style="color:var(--bad)">${bc.join(', ')}</span> — no single true value is visible.`;});
+  document.getElementById('sa-sum').addEventListener('click',()=>{if(!Object.keys(masks).length)genMasks();stage=3;draw();const ts=w.reduce((a,b)=>a+b,0);readout.innerHTML=`<span class="k">Masks cancel pairwise → recovered sum</span> <span class="v" style="color:var(--good)">= ${ts}</span> = Σwᵢ. Individual values never revealed.`;});
+  document.getElementById('sa-reset').addEventListener('click',reset);
+  reset();
+}
+
+/* ============================================================
+   PAGE 5 — DIFFERENTIAL PRIVACY
+   ============================================================ */
+function initDP(){
+  const curves=document.getElementById('dp-curves'),side=document.getElementById('dp-side');
+  const slider=document.getElementById('dp-slider'),epsLab=document.getElementById('dp-eps'),readout=document.getElementById('dp-readout');
+  const B=1,delta=1e-5;let jitterTimer=null;
+  const sigmaFor=e=>B*Math.sqrt(2*Math.log(1.25/delta))/e;
+  const gauss=(x,mu,s)=>Math.exp(-((x-mu)*(x-mu))/(2*s*s))/(s*Math.sqrt(2*Math.PI));
+  function drawCurves(eps){
+    clear(curves);const W=460,H=260,pad=34,base=H-30,s=sigmaFor(eps),mu1=-0.5,mu2=0.5,span=Math.max(4,s*3+1);
+    const X=x=>pad+(x+span)/(2*span)*(W-2*pad);
+    curves.appendChild(el('line',{x1:pad,y1:base,x2:W-pad,y2:base,stroke:'var(--line2)','stroke-width':1}));
+    const peak=gauss(mu1,mu1,s),Ypx=y=>base-(y/peak)*(base-24);
+    function path(mu,col){let dstr='';for(let i=0;i<=120;i++){const x=-span+i/120*2*span,y=gauss(x,mu,s),px=X(x),py=Ypx(y);dstr+=(i?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' ';}
+      curves.appendChild(el('path',{d:dstr+`L ${X(span)} ${base} L ${X(-span)} ${base} Z`,fill:col,opacity:.12}));
+      curves.appendChild(el('path',{d:dstr,fill:'none',stroke:col,'stroke-width':2.5}));}
+    path(mu1,'var(--item)');path(mu2,'var(--priv)');
+    curves.appendChild(txt(el('text',{x:X(mu1),y:20,fill:'var(--item)','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono'}),'dataset D'));
+    curves.appendChild(txt(el('text',{x:X(mu2),y:base+18,fill:'var(--priv)','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono'}),"neighbour D′"));
+    let ov=0,step=2*span/400;for(let x=-span;x<=span;x+=step)ov+=Math.min(gauss(x,mu1,s),gauss(x,mu2,s))*step;
+    return{s,overlap:clamp(ov,0,1)};
+  }
+  function drawSide(eps,s,overlap){
+    clear(side);const W=460;
+    side.appendChild(txt(el('text',{x:24,y:26,fill:'var(--dim)','font-size':11,'font-family':'IBM Plex Mono'}),'released = true + noise'));
+    const trackY=44,cx=230,halfW=170;
+    side.appendChild(el('line',{x1:cx-halfW,y1:trackY,x2:cx+halfW,y2:trackY,stroke:'var(--line2)','stroke-width':1}));
+    side.appendChild(el('circle',{cx,cy:trackY,r:4,fill:'var(--good)'}));
+    const jitterDot=el('circle',{cx,cy:trackY,r:6,fill:'var(--priv)',opacity:.9});side.appendChild(jitterDot);
+    const adv=clamp(1-overlap,0,1),by=92;
+    side.appendChild(txt(el('text',{x:24,y:by-8,fill:'var(--dim)','font-size':11,'font-family':'IBM Plex Mono'}),"attacker's edge"));
+    side.appendChild(el('rect',{x:24,y:by,width:W-48,height:16,rx:8,fill:'#eef2f7'}));
+    side.appendChild(el('rect',{x:24,y:by,width:(W-48)*adv,height:16,rx:8,fill:adv>.5?'var(--bad)':'var(--good)'}));
+    const util=clamp(1/(1+sigmaFor(eps)/8),0,1),uy=150;
+    side.appendChild(txt(el('text',{x:24,y:uy-8,fill:'var(--dim)','font-size':11,'font-family':'IBM Plex Mono'}),'accuracy retained'));
+    side.appendChild(el('rect',{x:24,y:uy,width:W-48,height:16,rx:8,fill:'#eef2f7'}));
+    side.appendChild(el('rect',{x:24,y:uy,width:(W-48)*util,height:16,rx:8,fill:'var(--user)'}));
+    const gy=210,gh=40,gx=24,gw=W-48;
+    side.appendChild(el('line',{x1:gx,y1:gy+gh,x2:gx+gw,y2:gy+gh,stroke:'var(--line2)','stroke-width':1}));
+    let dstr='';for(let i=0;i<=60;i++){const e=0.1+i/60*4.9,u=clamp(1/(1+sigmaFor(e)/8),0,1),px=gx+i/60*gw,py=gy+gh-u*gh;dstr+=(i?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' ';}
+    side.appendChild(el('path',{d:dstr,fill:'none',stroke:'var(--user)','stroke-width':2,opacity:.85}));
+    const ex=gx+clamp((eps-0.1)/4.9,0,1)*gw;
+    side.appendChild(el('circle',{cx:ex,cy:gy+gh-util*gh,r:5,fill:'var(--user)',stroke:'#fff','stroke-width':2}));
+    side.appendChild(txt(el('text',{x:gx,y:gy+gh+16,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'ε →'));
+    if(jitterTimer)clearInterval(jitterTimer);
+    jitterTimer=setInterval(()=>{const u1=Math.random(),u2=Math.random(),z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2),off=clamp(z*(s/6),-1,1)*halfW;jitterDot.setAttribute('cx',cx+off);},90);
+    readout.innerHTML=`<span class="k">σ =</span> <span class="v">${s.toFixed(2)}</span> · <span class="k">overlap =</span> <span class="v" style="color:var(--priv)">${(overlap*100).toFixed(0)}%</span> · <span class="k">attacker edge =</span> <span class="v" style="color:${adv>.5?'var(--bad)':'var(--good)'}">${(adv*100).toFixed(0)}%</span>`;
+  }
+  function update(){const eps=+slider.value/100;epsLab.textContent=eps.toFixed(2);const{s,overlap}=drawCurves(eps);drawSide(eps,s,overlap);}
+  slider.addEventListener('input',update);update();
+}
+</script>
+</body>
+</html>
