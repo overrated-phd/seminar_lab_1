@@ -205,6 +205,39 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
         </div>
       </div>
     </div>
+
+    <!-- section C: how U and V evolve -->
+    <div class="panel">
+      <p class="section-k">Section C · the solver</p>
+      <h3>How <span class="tag-user">U</span> and <span class="tag-item">V</span> evolve</h3>
+      <p class="sub">Two ways to reach the same place. Pick a solver, then train (Section B) and watch each factor move.</p>
+
+      <div class="controls" style="margin-top:0;margin-bottom:14px">
+        <button class="btn primary" id="solv-sgd">SGD</button>
+        <button class="btn" id="solv-als">ALS</button>
+        <button class="btn ghost" id="mf-trails">Trails: on</button>
+        <div class="readout mono" style="margin:0;flex:1" id="solv-tag">stochastic gradient descent · small steps, every rating</div>
+      </div>
+
+      <div class="eq" id="solv-eq" style="margin-bottom:18px"></div>
+
+      <div class="grid2">
+        <div>
+          <div class="mlabel" style="color:var(--user)">U — user factors, per-epoch movement</div>
+          <svg id="mf-evolU" viewBox="0 0 420 190" role="img" aria-label="user factor evolution"></svg>
+        </div>
+        <div>
+          <div class="mlabel" style="color:var(--item)">V — item factors, per-epoch movement</div>
+          <svg id="mf-evolV" viewBox="0 0 420 190" role="img" aria-label="item factor evolution"></svg>
+        </div>
+      </div>
+
+      <div class="chips">
+        <span class="chip"><span class="sw" style="background:var(--user)"></span>current value (bar length)</span>
+        <span class="chip"><span class="sw" style="background:var(--good)"></span>Δ this epoch (how far it moved)</span>
+      </div>
+      <div class="note" id="solv-note"></div>
+    </div>
   </div>
 </section>
 
@@ -389,15 +422,59 @@ function initMF(){
   const uNames=["U1","U2","U3","U4","U5"], iNames=["I1","I2","I3","I4","I5"];
   let U,V,epoch,running=false,raf=null,hist=[];
   let hu=0,hi=0,sweep=true,sweepTimer=null;
+  let solver='sgd', showTrails=true;
+  let dU=[],dV=[],trailU=[],trailV=[];
   const rnd=()=>(Math.random()*2-1)*0.3;
   const pred=(u,i)=>U[u][0]*V[i][0]+U[u][1]*V[i][1];
   function rmse(){let se=0,n=0;for(let u=0;u<nU;u++)for(let i=0;i<nI;i++)if(R[u][i]>0){const e=R[u][i]-pred(u,i);se+=e*e;n++;}return Math.sqrt(se/n);}
   function reset(){
     U=Array.from({length:nU},()=>[rnd(),rnd()]);V=Array.from({length:nI},()=>[rnd(),rnd()]);
     epoch=0;running=false;hist=[];if(raf)cancelAnimationFrame(raf);
+    dU=U.map(()=>[0,0]);dV=V.map(()=>[0,0]);
+    trailU=U.map(u=>[u.slice()]);trailV=V.map(v=>[v.slice()]);
     renderAll();
   }
-  function sgd(){const lr=0.012,lam=0.06;for(let u=0;u<nU;u++)for(let i=0;i<nI;i++){if(R[u][i]===0)continue;const e=R[u][i]-pred(u,i);for(let k=0;k<d;k++){const uk=U[u][k],vk=V[i][k];U[u][k]+=lr*(e*vk-lam*uk);V[i][k]+=lr*(e*uk-lam*vk);}}epoch++;}
+  function snapshot(){return{U:U.map(r=>r.slice()),V:V.map(r=>r.slice())};}
+  function recordDeltas(before){
+    dU=U.map((r,u)=>r.map((x,k)=>Math.abs(x-before.U[u][k])));
+    dV=V.map((r,i)=>r.map((x,k)=>Math.abs(x-before.V[i][k])));
+    for(let u=0;u<nU;u++){trailU[u].push(U[u].slice());if(trailU[u].length>40)trailU[u].shift();}
+    for(let i=0;i<nI;i++){trailV[i].push(V[i].slice());if(trailV[i].length>40)trailV[i].shift();}
+  }
+
+  /* --- SGD: tiny steps along the gradient, one known rating at a time --- */
+  function sgd(){
+    const before=snapshot(),lr=0.012,lam=0.06;
+    for(let u=0;u<nU;u++)for(let i=0;i<nI;i++){
+      if(R[u][i]===0)continue;
+      const e=R[u][i]-pred(u,i);
+      for(let k=0;k<d;k++){const uk=U[u][k],vk=V[i][k];U[u][k]+=lr*(e*vk-lam*uk);V[i][k]+=lr*(e*uk-lam*vk);}
+    }
+    epoch++;recordDeltas(before);
+  }
+
+  /* --- ALS: freeze one side, solve the other exactly (2x2 normal equations) --- */
+  function solve2(A,b){const det=A[0][0]*A[1][1]-A[0][1]*A[1][0];if(Math.abs(det)<1e-9)return null;
+    return [(b[0]*A[1][1]-b[1]*A[0][1])/det,(A[0][0]*b[1]-A[1][0]*b[0])/det];}
+  function als(){
+    const before=snapshot(),lam=0.35;
+    // fix V, solve each user row
+    for(let u=0;u<nU;u++){
+      let A=[[lam,0],[0,lam]],b=[0,0],any=false;
+      for(let i=0;i<nI;i++){if(R[u][i]===0)continue;any=true;
+        for(let a=0;a<2;a++){for(let c=0;c<2;c++)A[a][c]+=V[i][a]*V[i][c];b[a]+=R[u][i]*V[i][a];}}
+      if(any){const s=solve2(A,b);if(s)U[u]=s;}
+    }
+    // fix U, solve each item row
+    for(let i=0;i<nI;i++){
+      let A=[[lam,0],[0,lam]],b=[0,0],any=false;
+      for(let u=0;u<nU;u++){if(R[u][i]===0)continue;any=true;
+        for(let a=0;a<2;a++){for(let c=0;c<2;c++)A[a][c]+=U[u][a]*U[u][c];b[a]+=R[u][i]*U[u][a];}}
+      if(any){const s=solve2(A,b);if(s)V[i]=s;}
+    }
+    epoch++;recordDeltas(before);
+  }
+  const step=()=>solver==='sgd'?sgd():als();
 
   const decomp=document.getElementById('mf-decomp');
   const dotBox=document.getElementById('mf-dot');
@@ -456,6 +533,15 @@ function initMF(){
     space.appendChild(el('line',{x1:20,y1:cy,x2:W-20,y2:cy,stroke:'var(--line2)','stroke-width':1}));
     space.appendChild(el('line',{x1:cx,y1:20,x2:cx,y2:H-20,stroke:'var(--line2)','stroke-width':1}));
     const P=v=>[cx+v[0]*sc,cy-v[1]*sc];
+    // motion trails: where each vector has travelled
+    if(showTrails){
+      const trail=(arr,col)=>arr.forEach(hist=>{
+        if(hist.length<2)return;
+        let ds='';hist.forEach((v,k)=>{const p=P(v);ds+=(k?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)+' ';});
+        space.appendChild(el('path',{d:ds,fill:'none',stroke:col,'stroke-width':1.4,opacity:.28}));
+      });
+      trail(trailU,'var(--user)');trail(trailV,'var(--item)');
+    }
     const a=P(U[hu]),b=P(V[hi]);
     space.appendChild(el('line',{x1:cx,y1:cy,x2:a[0],y2:a[1],stroke:'var(--user)','stroke-width':2,opacity:.5}));
     space.appendChild(el('line',{x1:cx,y1:cy,x2:b[0],y2:b[1],stroke:'var(--item)','stroke-width':2,opacity:.5}));
@@ -473,7 +559,8 @@ function initMF(){
     lossSVG.appendChild(txt(el('text',{x:pad,y:12,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'RMSE'));
     lossSVG.appendChild(txt(el('text',{x:W-40,y:base+16,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'epoch'));
     if(hist.length>1){
-      const maxE=Math.max(600,hist.length),maxL=Math.max(...hist,0.1);
+      const budget=solver==='sgd'?600:40;
+      const maxE=Math.max(budget,hist.length),maxL=Math.max(...hist,0.1);
       let dstr='';hist.forEach((L,k)=>{const x=pad+(k/maxE)*(W-pad-14);const y=base-(L/maxL)*(base-20);dstr+=(k?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';});
       lossSVG.appendChild(el('path',{d:dstr,fill:'none',stroke:'var(--user)','stroke-width':2.5}));
       const lastx=pad+((hist.length-1)/maxE)*(W-pad-14),lasty=base-(hist[hist.length-1]/maxL)*(base-20);
@@ -482,12 +569,82 @@ function initMF(){
     status.textContent=`RMSE ${rmse().toFixed(3)} · epoch ${epoch}`;
   }
 
-  function renderAll(){renderDecomp();renderSpace();renderLoss();}
+  /* ---------- Section C: factor evolution ---------- */
+  const evolU=document.getElementById('mf-evolU'), evolV=document.getElementById('mf-evolV');
+  const solvEq=document.getElementById('solv-eq'), solvTag=document.getElementById('solv-tag'), solvNote=document.getElementById('solv-note');
+  const EQ={
+    sgd:`for each observed r<sub>ui</sub>: &nbsp; e = r<sub>ui</sub> − u<sub>u</sub>ᵀv<sub>i</sub><br>
+         <b>u<sub>u</sub> ← u<sub>u</sub> + η( e·v<sub>i</sub> − λu<sub>u</sub> )</b> &nbsp;&nbsp;
+         <b>v<sub>i</sub> ← v<sub>i</sub> + η( e·u<sub>u</sub> − λv<sub>i</sub> )</b>
+         &nbsp;&nbsp;<span class="hl">many small nudges</span>`,
+    als:`fix <b>V</b>, solve every user exactly: &nbsp; <b>u<sub>u</sub> = ( VᵀV + λI )<sup>−1</sup> Vᵀ r<sub>u</sub></b><br>
+         then fix <b>U</b>, solve every item: &nbsp; <b>v<sub>i</sub> = ( UᵀU + λI )<sup>−1</sup> Uᵀ r<sub>i</sub></b>
+         &nbsp;&nbsp;<span class="hl">one exact d×d solve per factor</span>`
+  };
+  const TAG={sgd:'stochastic gradient descent · small steps, every rating',
+             als:'alternating least squares · freeze one side, solve the other'};
+  const NOTE={sgd:'SGD wanders: each factor drifts a little every epoch, so the trails are long and curved and the error falls gradually.',
+              als:'ALS leaps: the first sweep lands almost on the answer, so Δ collapses after a couple of epochs — that exactness is what CDIMF inherits.'};
 
-  function loop(){if(!running)return;for(let s=0;s<4;s++){sgd();hist.push(rmse());}renderAll();if(epoch>600){running=false;trainBtn.textContent='▶ Train';return;}raf=requestAnimationFrame(loop);}
+  function evolPanel(svg,mat,deltas,names,col){
+    clear(svg);
+    const W=420,rowH=32,x0=52,barW=120,gap=14,top=22;
+    svg.appendChild(txt(el('text',{x:x0,y:12,fill:'var(--dim)','font-size':9.5,'font-family':'IBM Plex Mono'}),'factor k=0'));
+    svg.appendChild(txt(el('text',{x:x0+barW+gap+34,y:12,fill:'var(--dim)','font-size':9.5,'font-family':'IBM Plex Mono'}),'k=1'));
+    svg.appendChild(txt(el('text',{x:W-58,y:12,fill:'var(--good)','font-size':9.5,'font-family':'IBM Plex Mono'}),'Δ epoch'));
+    let maxAbs=0.5;mat.forEach(r=>r.forEach(v=>maxAbs=Math.max(maxAbs,Math.abs(v))));
+    let maxD=1e-4;deltas.forEach(r=>r.forEach(v=>maxD=Math.max(maxD,v)));
+    mat.forEach((row,r)=>{
+      const y=top+r*rowH;
+      svg.appendChild(txt(el('text',{x:x0-10,y:y+13,fill:col,'font-size':10.5,'text-anchor':'end','font-family':'IBM Plex Mono'}),names[r]));
+      row.forEach((v,k)=>{
+        const bx=x0+k*(barW/2+gap+30), half=barW/4;
+        const mid=bx+half;
+        svg.appendChild(el('line',{x1:mid,y1:y+2,x2:mid,y2:y+20,stroke:'var(--line2)','stroke-width':1}));
+        const w=Math.abs(v)/maxAbs*half;
+        svg.appendChild(el('rect',{x:v>=0?mid:mid-w,y:y+5,width:Math.max(1,w),height:12,rx:3,fill:col,opacity:.85}));
+        svg.appendChild(txt(el('text',{x:mid+half+6,y:y+15,fill:'var(--muted)','font-size':9.5,'font-family':'IBM Plex Mono'}),v.toFixed(2)));
+      });
+      // delta bar (movement this epoch)
+      const dTot=Math.hypot(deltas[r][0],deltas[r][1]);
+      const dw=clamp(dTot/maxD,0,1)*44;
+      svg.appendChild(el('rect',{x:W-58,y:y+5,width:44,height:12,rx:3,fill:'#eef2f7'}));
+      svg.appendChild(el('rect',{x:W-58,y:y+5,width:Math.max(1,dw),height:12,rx:3,fill:'var(--good)'}));
+    });
+    svg.setAttribute('viewBox',`0 0 ${W} ${top+mat.length*rowH+8}`);
+  }
+  function renderEvol(){
+    solvEq.innerHTML=EQ[solver];solvTag.textContent=TAG[solver];solvNote.textContent=NOTE[solver];
+    evolPanel(evolU,U,dU,uNames,'var(--user)');
+    evolPanel(evolV,V,dV,iNames,'var(--item)');
+  }
+
+  function renderAll(){renderDecomp();renderSpace();renderLoss();renderEvol();}
+
+  function loop(){
+    if(!running)return;
+    const per=solver==='sgd'?4:1;                     // ALS converges fast: one sweep per frame
+    for(let s=0;s<per;s++){step();hist.push(rmse());}
+    renderAll();
+    const done=solver==='sgd'?epoch>600:epoch>40;
+    if(done){running=false;trainBtn.textContent='▶ Train';return;}
+    raf=requestAnimationFrame(loop);
+  }
   const trainBtn=document.getElementById('mf-train');
   trainBtn.addEventListener('click',()=>{running=!running;trainBtn.textContent=running?'⏸ Pause':'▶ Train';if(running)loop();});
   document.getElementById('mf-reset').addEventListener('click',()=>{trainBtn.textContent='▶ Train';reset();});
+
+  const bSgd=document.getElementById('solv-sgd'),bAls=document.getElementById('solv-als');
+  function pickSolver(s){
+    solver=s;
+    bSgd.className='btn'+(s==='sgd'?' primary':'');
+    bAls.className='btn'+(s==='als'?' primary':'');
+    trainBtn.textContent='▶ Train';reset();
+  }
+  bSgd.addEventListener('click',()=>pickSolver('sgd'));
+  bAls.addEventListener('click',()=>pickSolver('als'));
+  const trailBtn=document.getElementById('mf-trails');
+  trailBtn.addEventListener('click',()=>{showTrails=!showTrails;trailBtn.textContent='Trails: '+(showTrails?'on':'off');renderSpace();});
 
   const animBtn=document.getElementById('mf-anim');
   function setBtn(){animBtn.textContent=sweep?'⏸ Pause sweep':'▶ Resume sweep';}
