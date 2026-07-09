@@ -306,6 +306,69 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
   meet, then read the fine print.</p>
 
   <div class="panel" style="margin-bottom:22px">
+    <p class="section-k">Intuition</p>
+    <h3>What is a Lagrangian, really?</h3>
+    <p class="sub">Before any algebra: it is the trick for minimising something <em>while obeying a rule</em>.</p>
+
+    <div class="grid2" style="gap:20px;align-items:start">
+      <div>
+        <p style="color:var(--muted);font-size:14px;margin-top:0">
+          Imagine reaching the <b>lowest point of a valley</b> — but you may not leave the <b>road</b> that runs across it.
+          Walking freely downhill is easy. Walking downhill <em>while staying on the road</em> is the constrained problem.
+        </p>
+        <p style="color:var(--muted);font-size:14px">
+          Push the walker along the road. At most spots gravity still tugs you <span class="tag-good">forward or backward
+          along the road</span> — so you are not done. You stop exactly where gravity pulls <b>straight into the road</b>, with
+          no push left along it. There, a contour of the valley just <b>kisses</b> the road.
+        </p>
+        <div class="eq" style="line-height:1.9">
+          At that point &nbsp; <b>&nabla;f = &minus;&lambda; &nabla;g</b> &nbsp;— the two arrows line up.<br>
+          <span class="hl">&lambda;</span> is the <b>price</b>: what the rule costs you, per unit of pull.<br>
+          The Lagrangian &nbsp; <b>L = f + &lambda;&middot;g</b> &nbsp; just folds the rule into the objective.
+        </div>
+        <p style="color:var(--muted);font-size:14px">
+          <b>&lambda; is a toll, not a wall.</b> Rather than forbidding you to leave the road, we <em>charge</em> &lambda; per metre of
+          violation. Set the toll right and you choose to stay on the road by yourself — and the problem becomes
+          <em>unconstrained</em>, so each domain can solve it alone.
+        </p>
+      </div>
+
+      <div>
+        <svg id="lag-svg" viewBox="0 0 520 340" role="img" aria-label="constrained optimisation: contours, road, and gradient arrows"></svg>
+        <div class="controls" style="margin-top:6px">
+          <button class="btn primary" id="lag-snap">Snap to the optimum</button>
+          <button class="btn ghost" id="lag-aug">Show the &rho; penalty</button>
+        </div>
+        <div class="range" style="margin-top:12px;min-width:100%">
+          <label>walk along the road <b id="lag-tv">0.00</b></label>
+          <input type="range" id="lag-t" min="-40" max="180" value="0" step="1"/>
+        </div>
+        <div class="range" id="lag-rho-wrap" style="margin-top:10px;min-width:100%;display:none">
+          <label>penalty strength &rho; <b id="lag-rv">2.0</b></label>
+          <input type="range" id="lag-rho" min="0" max="120" value="20" step="1"/>
+        </div>
+        <div class="readout" id="lag-out"></div>
+        <div class="chips">
+          <span class="chip"><span class="sw" style="background:var(--item)"></span>contours of f</span>
+          <span class="chip"><span class="sw" style="background:var(--ink)"></span>road: g = 0</span>
+          <span class="chip"><span class="sw" style="background:var(--bad)"></span>&nabla;f</span>
+          <span class="chip"><span class="sw" style="background:var(--priv)"></span>&nabla;g</span>
+          <span class="chip"><span class="sw" style="background:var(--good)"></span>pull left along road</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">In CDIMF the valley is each domain’s ALS loss <b>Fᵢ(Xᵢ,Yᵢ)</b> and the road is the consensus rule
+    <b>Xᵢ − Z = 0</b>. The multiplier λ becomes the dual matrix <b>Λᵢ</b> — one price per shared user.
+    <br><br>
+    Now press <em>Show the ρ penalty</em> and drag ρ up. The spring <b>(ρ/2)g²</b> bends the landscape toward the road — that is what
+    makes each domain’s subproblem strongly convex — but notice the <b style="color:var(--user)">penalised min never quite lands on the road</b>:
+    even at ρ = 12 it still sits at g ≈ 0.17, and only reaches it as ρ → ∞. <b>A spring alone is biased.</b> The toll λ is what removes
+    that bias exactly, at finite ρ. Toll + spring = the <b>Augmented</b> Lagrangian, and the dual update Uᵢ ← Uᵢ + (Xᵢ − Z) is simply
+    how the toll learns its correct price. That is derived next.</div>
+  </div>
+
+  <div class="panel" style="margin-bottom:22px">
     <p class="section-k">Derivation</p>
     <h3>From a constraint to the three ADMM steps</h3>
     <p class="sub">The whole method falls out of one idea: <em>force the shared users' factors to agree</em>, then relax that constraint with a Lagrangian.</p>
@@ -1168,9 +1231,149 @@ function initD(){
 }
 
 /* ============================================================
-   PAGE 4 — CDIMF : ADMM consensus between two domains
+   PAGE 3a — LAGRANGIAN INTUITION : valley, road, tangency
+   ============================================================ */
+function initLAG(){
+  const svg=document.getElementById('lag-svg');
+  const tS=document.getElementById('lag-t'), tLab=document.getElementById('lag-tv');
+  const rS=document.getElementById('lag-rho'), rLab=document.getElementById('lag-rv');
+  const rWrap=document.getElementById('lag-rho-wrap');
+  const out=document.getElementById('lag-out');
+  const snapBtn=document.getElementById('lag-snap'), augBtn=document.getElementById('lag-aug');
+  let showAug=false;
+
+  // valley  f(x,y) = a(x-cx)^2 + b(y-cy)^2      road  g(x,y) = x + y - 1 = 0
+  const a=1.0,b=2.2,cxv=1.7,cyv=1.0;
+  const f=(x,y)=>a*Math.pow(x-cxv,2)+b*Math.pow(y-cyv,2);
+  const gradF=(x,y)=>[2*a*(x-cxv),2*b*(y-cyv)];
+  const gradG=[1,1];
+  const onRoad=t=>[t,1-t];
+  const tStar=(a*cxv+b*(1-cyv))/(a+b);        // argmin of f(t,1-t)
+
+  function augCentre(rho){                     // argmin f + (rho/2) g^2
+    const A=[[2*a+rho,rho],[rho,2*b+rho]], rhs=[2*a*cxv+rho,2*b*cyv+rho];
+    const det=A[0][0]*A[1][1]-A[0][1]*A[1][0];
+    return [(rhs[0]*A[1][1]-rhs[1]*A[0][1])/det,(A[0][0]*rhs[1]-A[1][0]*rhs[0])/det];
+  }
+  function eigSym(A){
+    const p=A[0][0],q=A[0][1],r=A[1][1];
+    const tr=p+r,det=p*r-q*q,s=Math.sqrt(Math.max(0,tr*tr/4-det));
+    const l1=tr/2+s,l2=tr/2-s;
+    let v1=Math.abs(q)>1e-9?[l1-r,q]:[1,0];
+    const n=Math.hypot(v1[0],v1[1])||1;v1=[v1[0]/n,v1[1]/n];
+    return{l1:Math.max(l1,1e-6),l2:Math.max(l2,1e-6),v1,v2:[-v1[1],v1[0]]};
+  }
+
+  const X0=-0.7,X1=2.9,Y0=-0.9,Y1=2.3;
+  const W=520,H=340,padL=40,padR=18,padT=16,padB=30;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const sc=Math.min(plotW/(X1-X0), plotH/(Y1-Y0));
+  const ox=padL+(plotW-(X1-X0)*sc)/2, oy=padT+(plotH-(Y1-Y0)*sc)/2;
+  const PX=x=>ox+(x-X0)*sc, PY=y=>oy+(Y1-y)*sc;
+
+  function draw(){
+    clear(svg);
+    svg.style.overflow='hidden';
+    const rho=+rS.value/10;
+    const t=+tS.value/100;
+    const p=onRoad(t), gf=gradF(p[0],p[1]);
+
+    const defs=el('defs',{});
+    const cp=el('clipPath',{id:'lagClip'});
+    cp.appendChild(el('rect',{x:padL,y:padT,width:plotW,height:plotH}));
+    defs.appendChild(cp);
+    [['lagRed','var(--bad)'],['lagVio','var(--priv)'],['lagGrn','var(--good)']].forEach(pair=>{
+      const mk=el('marker',{id:pair[0],markerWidth:9,markerHeight:9,refX:7,refY:3,orient:'auto'});
+      mk.appendChild(el('path',{d:'M0,0 L7,3 L0,6 Z',fill:pair[1]}));defs.appendChild(mk);
+    });
+    svg.appendChild(defs);
+    const G=el('g',{'clip-path':'url(#lagClip)'});svg.appendChild(G);
+
+    // contours of f
+    [0.15,0.5,1.1,2.0,3.2,4.8].forEach(c=>{
+      const r1=Math.sqrt(c/a), r2=Math.sqrt(c/b);
+      let ds='';
+      for(let k=0;k<=72;k++){const th=k/72*2*Math.PI;
+        const x=cxv+r1*Math.cos(th), y=cyv+r2*Math.sin(th);
+        ds+=(k?'L':'M')+PX(x).toFixed(1)+' '+PY(y).toFixed(1)+' ';}
+      G.appendChild(el('path',{d:ds+'Z',fill:'none',stroke:'rgba(22,104,176,.30)','stroke-width':1}));
+    });
+    // the contour passing through the walker (tangent at the optimum)
+    (function(){const c=f(p[0],p[1]);const r1=Math.sqrt(c/a),r2=Math.sqrt(c/b);
+      let ds='';for(let k=0;k<=90;k++){const th=k/90*2*Math.PI;
+        const x=cxv+r1*Math.cos(th),y=cyv+r2*Math.sin(th);
+        ds+=(k?'L':'M')+PX(x).toFixed(1)+' '+PY(y).toFixed(1)+' ';}
+      G.appendChild(el('path',{d:ds+'Z',fill:'none',stroke:'var(--item)','stroke-width':2.2}));})();
+
+    // augmented landscape: f + (rho/2) g^2
+    if(showAug && rho>0){
+      const ctr=augCentre(rho);
+      const Q=[[(2*a+rho)/2,rho/2],[rho/2,(2*b+rho)/2]];   // quadratic form matrix
+      const E=eigSym(Q);
+      [0.3,1.0,2.2,3.8].forEach(c=>{
+        const r1=Math.sqrt(c/E.l1),r2=Math.sqrt(c/E.l2);
+        let ds='';
+        for(let k=0;k<=72;k++){const th=k/72*2*Math.PI;
+          const x=ctr[0]+r1*Math.cos(th)*E.v1[0]+r2*Math.sin(th)*E.v2[0];
+          const y=ctr[1]+r1*Math.cos(th)*E.v1[1]+r2*Math.sin(th)*E.v2[1];
+          ds+=(k?'L':'M')+PX(x).toFixed(1)+' '+PY(y).toFixed(1)+' ';}
+        G.appendChild(el('path',{d:ds+'Z',fill:'none',stroke:'var(--user)','stroke-width':1.2,'stroke-dasharray':'4 3',opacity:.75}));
+      });
+      G.appendChild(el('circle',{cx:PX(ctr[0]),cy:PY(ctr[1]),r:4,fill:'var(--user)'}));
+      G.appendChild(txt(el('text',{x:PX(ctr[0])+7,y:PY(ctr[1])-6,fill:'var(--user)','font-size':9.5,'font-family':'IBM Plex Mono'}),'penalised min'));
+    }
+
+    G.appendChild(el('circle',{cx:PX(cxv),cy:PY(cyv),r:3.5,fill:'var(--item)',opacity:.65}));
+    G.appendChild(txt(el('text',{x:PX(cxv)+7,y:PY(cyv)+4,fill:'var(--item)','font-size':9.5,'font-family':'IBM Plex Mono'}),'free min'));
+
+    // the road
+    G.appendChild(el('line',{x1:PX(X0),y1:PY(1-X0),x2:PX(X1),y2:PY(1-X1),stroke:'var(--ink)','stroke-width':2.4}));
+    G.appendChild(txt(el('text',{x:PX(2.30),y:PY(1-2.30)-8,fill:'var(--ink)','font-size':10,'font-family':'IBM Plex Mono'}),'g = 0'));
+
+    const ps=onRoad(tStar);
+    G.appendChild(txt(el('text',{x:PX(ps[0]),y:PY(ps[1])+5,fill:'var(--good)','font-size':15,'text-anchor':'middle'}),'\u2605'));
+
+    const AR=0.42;
+    const gn=Math.hypot(gf[0],gf[1])||1;
+    function arrow(vx,vy,col,mk,lab){
+      const L=Math.hypot(vx,vy); if(L<1e-4) return;
+      const ex=p[0]+vx*AR, ey=p[1]+vy*AR;
+      G.appendChild(el('line',{x1:PX(p[0]),y1:PY(p[1]),x2:PX(ex),y2:PY(ey),stroke:col,'stroke-width':2.2,'marker-end':'url(#'+mk+')'}));
+      if(lab)G.appendChild(txt(el('text',{x:PX(ex)+5,y:PY(ey)-4,fill:col,'font-size':9.5,'font-family':'IBM Plex Mono'}),lab));
+    }
+    arrow(-gf[0]/gn,-gf[1]/gn,'var(--bad)','lagRed','\u2212\u2207f');
+    arrow(gradG[0]*Math.SQRT1_2*0.9,gradG[1]*Math.SQRT1_2*0.9,'var(--priv)','lagVio','\u2207g');
+    const d=[Math.SQRT1_2,-Math.SQRT1_2];
+    const tang=(-gf[0])*d[0]+(-gf[1])*d[1];
+    arrow(d[0]*tang*0.55,d[1]*tang*0.55,'var(--good)','lagGrn', Math.abs(tang)>0.06?'pull left':'');
+    G.appendChild(el('circle',{cx:PX(p[0]),cy:PY(p[1]),r:6,fill:'#fff',stroke:'var(--ink)','stroke-width':2}));
+
+    const lam=-(gf[0]*gradG[0]+gf[1]*gradG[1])/(gradG[0]*gradG[0]+gradG[1]*gradG[1]);
+    const cosang=(gf[0]*gradG[0]+gf[1]*gradG[1])/(gn*Math.SQRT2);
+    const ang=Math.acos(clamp(Math.abs(cosang),-1,1))*180/Math.PI;
+    const done=Math.abs(tang)<0.02;
+    out.innerHTML='<span class="k">f =</span> <span class="v">'+f(p[0],p[1]).toFixed(3)+'</span> \u00b7 '+
+      '<span class="k">pull along road =</span> <span class="v" style="color:'+(done?'var(--good)':'var(--bad)')+'">'+tang.toFixed(3)+'</span> \u00b7 '+
+      '<span class="k">\u2207f vs \u2207g angle =</span> <span class="v">'+ang.toFixed(1)+'\u00b0</span> \u00b7 '+
+      '<span class="k">\u03bb =</span> <span class="v" style="color:var(--priv)">'+lam.toFixed(3)+'</span>'+
+      (done?'<br><span style="color:var(--good)">No pull left along the road \u2014 the contour is tangent and \u2207f = \u2212\u03bb\u2207g. This is the constrained optimum.</span>':'');
+    tLab.textContent=t.toFixed(2);rLab.textContent=rho.toFixed(1);
+  }
+
+  tS.addEventListener('input',draw);
+  rS.addEventListener('input',draw);
+  snapBtn.addEventListener('click',function(){tS.value=Math.round(tStar*100);draw();});
+  augBtn.addEventListener('click',function(){showAug=!showAug;
+    rWrap.style.display=showAug?'flex':'none';
+    augBtn.textContent=showAug?'Hide the \u03c1 penalty':'Show the \u03c1 penalty';draw();});
+  draw();
+}
+
+/* ============================================================
+   PAGE 3 — CDIMF : ADMM consensus between two domains
    ============================================================ */
 function initCDIMF(){
+  initLAG();
   const nS=6;                                   // shared users
   const stage=document.getElementById('cd-stage'), resSVG=document.getElementById('cd-res');
   const status=document.getElementById('cd-status'), note=document.getElementById('cd-note');
