@@ -305,6 +305,88 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
   round by round. Nobody ships raw histories — only the quantity <span class="mono">Xᵢ + Uᵢ</span>. Watch the two clouds
   meet, then read the fine print.</p>
 
+  <div class="panel" style="margin-bottom:22px">
+    <p class="section-k">Derivation</p>
+    <h3>From a constraint to the three ADMM steps</h3>
+    <p class="sub">The whole method falls out of one idea: <em>force the shared users' factors to agree</em>, then relax that constraint with a Lagrangian.</p>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 1 · the constrained problem.</b> Each domain minimises its own loss Fᵢ, but shared users must land on one vector:<br>
+      <span style="font-size:14px">min<sub>{Xᵢ},{Yᵢ},Z</sub> &nbsp; Σᵢ Fᵢ(Xᵢ, Yᵢ) + g(Z) &nbsp;&nbsp; subject to &nbsp;&nbsp; <span class="hl">Xᵢ − Z = 0</span> &nbsp; ∀i</span><br>
+      <span style="color:var(--dim)">Z is the consensus copy; g is an optional regulariser on it.</span>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 2 · the Lagrangian.</b> Attach a dual matrix Λᵢ to each constraint:<br>
+      L = Σᵢ [ Fᵢ + ⟨Λᵢ , Xᵢ − Z⟩ ] + g(Z)
+      &nbsp;&nbsp;<span style="color:var(--dim)">— but this saddle point converges poorly on its own.</span>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 3 · <em>augment</em> it.</b> Add a quadratic penalty ρ on constraint violation — convexifies the subproblems and gives a step size:<br>
+      L<sub>ρ</sub> = Σᵢ [ Fᵢ + ⟨Λᵢ , Xᵢ − Z⟩ + <span class="hl">(ρ/2)‖Xᵢ − Z‖²<sub>F</sub></span> ] + g(Z)
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 4 · scale the dual.</b> Put Uᵢ = Λᵢ/ρ and complete the square. The linear and quadratic terms merge:<br>
+      ⟨Λᵢ, Xᵢ−Z⟩ + (ρ/2)‖Xᵢ−Z‖² &nbsp;=&nbsp; (ρ/2)‖Xᵢ − Z + Uᵢ‖² − (ρ/2)‖Uᵢ‖²<br>
+      <span style="color:var(--dim)">the last term is constant in Xᵢ, so it drops out of the minimisation →</span><br>
+      <b>L<sub>ρ</sub> = Σᵢ [ Fᵢ(Xᵢ,Yᵢ) + (ρ/2)‖Xᵢ − Z + Uᵢ‖²<sub>F</sub> ] + g(Z)</b>
+    </div>
+
+    <div class="eq" style="border-color:var(--user);background:rgba(217,131,36,.06)">
+      <b>Step 5 · minimise alternately → ADMM.</b> Fix two blocks, solve the third:<br>
+      <span style="line-height:2">
+      • over Xᵢ,Yᵢ &nbsp;→&nbsp; <b>X-step</b> (a local ALS with a ρ-pull toward Z − Uᵢ)<br>
+      • over Z &nbsp;→&nbsp; <b>Z-step</b>, Z ← prox<sub>g,1/ρN</sub>( ⟨X⟩ + ⟨U⟩ )<br>
+      • gradient <em>ascent</em> on the dual &nbsp;→&nbsp; <b>Uᵢ ← Uᵢ + (Xᵢ − Z)</b></span>
+    </div>
+
+    <div class="note">Notice what the X-step became: <span class="mono">argmin Fᵢ + (ρ/2)‖Xᵢ − H‖²</span> with <span class="mono">H = Z − Uᵢ</span>.
+    That is <em>exactly</em> the proximal term in the generic subproblem on station 04 — which is why CDIMF needs no new solver,
+    only a <b>ρI</b> added to the Gram matrix and a <b>ρH</b> added to the right-hand side.</div>
+  </div>
+
+  <div class="panel" style="margin-bottom:22px">
+    <p class="section-k">Derivation</p>
+    <h3>From a hard constraint to the three ADMM steps</h3>
+    <p class="sub">Consensus is a constraint. The Augmented Lagrangian is how we turn it into something each domain can solve on its own.</p>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 0 · the constrained problem.</b> Each domain keeps its own factors, but shared users must agree:<br>
+      min<sub>{Xᵢ},{Yᵢ},Z</sub> &nbsp; Σᵢ Fᵢ(Xᵢ, Yᵢ) + g(Z) &nbsp;&nbsp; <b>subject to</b> &nbsp; <span class="hl">Xᵢ − Z = 0 &nbsp; ∀i</span>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 1 · attach a multiplier.</b> Price the violation with a dual variable Λᵢ:<br>
+      L = Σᵢ Fᵢ + g(Z) + Σᵢ ⟨ Λᵢ , Xᵢ − Z ⟩
+      &nbsp;&nbsp;<span style="color:var(--dim)">— exact, but the saddle point is hard to reach</span>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 2 · augment it.</b> Add a quadratic penalty; it makes each subproblem strongly convex and stabilises the iteration:<br>
+      L<sub>ρ</sub> = Σᵢ Fᵢ + g(Z) + Σᵢ ⟨ Λᵢ , Xᵢ − Z ⟩ + <span class="hl">(ρ/2) Σᵢ ‖Xᵢ − Z‖²<sub>F</sub></span>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 3 · scale the dual, complete the square.</b> Set Uᵢ = Λᵢ / ρ. The two coupling terms merge:<br>
+      ⟨Λᵢ , Xᵢ−Z⟩ + (ρ/2)‖Xᵢ−Z‖² &nbsp;=&nbsp; <b>(ρ/2)‖Xᵢ − Z + Uᵢ‖²</b> − (ρ/2)‖Uᵢ‖²
+      &nbsp;<span style="color:var(--dim)">(last term is constant in Xᵢ)</span><br>
+      ⇒ &nbsp; L<sub>ρ</sub> = Σᵢ [ Fᵢ(Xᵢ,Yᵢ) + (ρ/2)‖Xᵢ − Z + Uᵢ‖²<sub>F</sub> ] + g(Z)
+    </div>
+
+    <div class="eq" style="border-color:var(--user);background:rgba(217,131,36,.06)">
+      <b>Step 4 · minimise alternately → the algorithm.</b><br>
+      <b>X-step</b> (each domain, alone) &nbsp; Xᵢ<sup>k+1</sup>, Yᵢ<sup>k+1</sup> ← argmin Fᵢ + (ρ/2)‖Xᵢ − Z<sup>k</sup> + Uᵢ<sup>k</sup>‖²<br>
+      <b>Z-step</b> (aggregate) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Z<sup>k+1</sup> ← prox<sub>g, 1/ρN</sub>( ⟨X⟩<sup>k+1</sup> + ⟨U⟩<sup>k</sup> )<br>
+      <b>dual ascent</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Uᵢ<sup>k+1</sup> ← Uᵢ<sup>k</sup> + ( Xᵢ<sup>k+1</sup> − Z<sup>k+1</sup> )
+    </div>
+
+    <div class="note">Read the X-step carefully: it is an ordinary ALS objective <em>plus</em> a pull toward <b>Z − Uᵢ</b>. That is the whole trick —
+    the constraint never leaves the local solver, it just becomes one extra quadratic term. Uᵢ accumulates the running disagreement, so a
+    domain that keeps drifting is pulled back harder each round. Station <b>04</b> shows this costs only a <b>ρI</b> added to the d×d matrix.</div>
+  </div>
+
   <div class="eq" style="margin-bottom:22px">
     <b>X-step</b> Xᵢ ← argmin Fᵢ(Xᵢ,Yᵢ) + (ρ/2)‖Xᵢ − Z + Uᵢ‖²  &nbsp;·&nbsp;
     <b>Z-step</b> Z ← prox<sub>g</sub>( ⟨X⟩ + ⟨U⟩ )  &nbsp;·&nbsp;
@@ -428,63 +510,133 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
 
 <!-- ============ PAGE 5 : SECURE AGGREGATION ============ -->
 <section class="page" id="page5">
-  <p class="eyebrow">05 — share the sum, not the secret</p>
-  <h1 class="title">Four companies. One shared total. No one's numbers exposed.</h1>
-  <p class="lede">Each domain must add its <span class="tag-user">factor update</span> to a shared average without
-  revealing it. Every pair shares a secret mask: one adds it, the other subtracts it. Broadcasts look like
-  <span class="tag-bad">noise</span>, but summed the masks <b>cancel</b> and only the true total survives.</p>
+  <p class="eyebrow">05 — fixing the Z-step</p>
+  <h1 class="title">Aggregate the messages. Never see one.</h1>
+  <p class="lede">Station 03 showed the leak: the broadcast <span class="mono">wᵢ = Xᵢ + Uᵢ</span> can be un-masked, because Z is the
+  public mean and the dual update is deterministic. Secure aggregation gives the Z-step <b>exactly the sum it needs</b> —
+  <span class="mono">Σᵢ wᵢ</span> — while every individual <span class="tag-user">wᵢ</span> stays hidden, even from the coordinator.</p>
+
+  <div class="eq" style="margin-bottom:22px">
+    Z-step needs only &nbsp;<b>⟨X⟩ + ⟨U⟩ = (1/N) Σᵢ wᵢ</b>&nbsp; — a <span class="hl">sum</span>, never the terms.
+    &nbsp;·&nbsp; each pair {i,j} shares a secret mask <b>s<sub>ij</sub></b>; i adds it, j subtracts it.
+  </div>
 
   <div class="grid2">
     <div class="panel">
       <h3>The masking round</h3>
-      <p class="sub">Set each domain's secret value, then walk the round.</p>
-      <div id="sa-inputs" class="controls" style="margin-top:0;margin-bottom:12px"></div>
+      <p class="sub">Four domains, each holding one shared user's message <span class="mono">wᵢ = Xᵢ + Uᵢ ∈ ℝ²</span>.</p>
       <div class="controls" style="margin-top:0">
         <button class="btn" id="sa-mask">1 · Add masks</button>
         <button class="btn" id="sa-send">2 · Broadcast</button>
-        <button class="btn primary" id="sa-sum">3 · Aggregate</button>
+        <button class="btn primary" id="sa-sum">3 · Z-step</button>
+        <button class="btn ghost" id="sa-rand">Randomise wᵢ</button>
         <button class="btn ghost" id="sa-reset">Reset</button>
       </div>
-      <div class="readout" id="sa-readout">Masks are drawn but not yet applied.</div>
+      <div class="readout" id="sa-readout" style="min-height:58px">Each domain holds its own wᵢ. Step through the round.</div>
+
+      <div class="mlabel" style="color:var(--dim);margin-top:16px">latent space — where the messages live</div>
+      <svg id="sa-plane" viewBox="0 0 420 260" role="img" aria-label="messages and masked broadcasts in latent space"></svg>
       <div class="chips">
-        <span class="chip"><span class="sw" style="background:var(--user)"></span>true value</span>
-        <span class="chip"><span class="sw" style="background:var(--priv)"></span>pairwise mask</span>
-        <span class="chip"><span class="sw" style="background:var(--bad)"></span>masked broadcast</span>
-        <span class="chip"><span class="sw" style="background:var(--good)"></span>recovered sum</span>
+        <span class="chip"><span class="sw" style="background:var(--user)"></span>true wᵢ = Xᵢ+Uᵢ</span>
+        <span class="chip"><span class="sw" style="background:var(--bad)"></span>masked broadcast w̃ᵢ</span>
+        <span class="chip"><span class="sw" style="background:var(--good)"></span>recovered Z</span>
       </div>
     </div>
+
     <div class="panel">
-      <h3>&nbsp;</h3>
+      <h3>Who sends what to whom</h3>
+      <p class="sub">Masks live on the edges and cancel in pairs. The coordinator only ever adds up.</p>
       <svg id="sa-stage" viewBox="0 0 460 380" role="img" aria-label="secure aggregation ring"></svg>
+      <div class="eq" id="sa-eq" style="margin-top:6px"></div>
     </div>
+  </div>
+
+  <div class="panel" style="margin-top:24px">
+    <p class="section-k">Why it plugs into CDIMF unchanged</p>
+    <h3>The Z-step is an average — and averages are all this protocol reveals</h3>
+    <div class="grid2" style="gap:18px">
+      <div class="eq" style="line-height:1.9">
+        Σᵢ w̃ᵢ = Σᵢ [ wᵢ + Σ<sub>j&gt;i</sub> s<sub>ij</sub> − Σ<sub>j&lt;i</sub> s<sub>ij</sub> ]<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= Σᵢ wᵢ + Σ<sub>i&lt;j</sub> ( s<sub>ij</sub> − s<sub>ij</sub> ) = <b style="color:var(--good)">Σᵢ wᵢ</b>
+      </div>
+      <ul style="color:var(--muted);font-size:13px;padding-left:18px;margin:0">
+        <li>The ALS solver, ρ, and the dual update are <b>untouched</b>.</li>
+        <li>Each w̃ᵢ alone is pseudo-uniform → reveals nothing.</li>
+        <li>Dropouts handled by <span class="mono">t</span>-of-<span class="mono">N</span> secret-sharing the seeds.</li>
+      </ul>
+    </div>
+    <div class="note" id="sa-caveat">One honest caveat: with only <b>N = 2</b> domains — the dual-domain setting CDIMF is evaluated in — a participant who
+    knows its own w₁ can subtract it from the revealed sum and recover w₂ exactly. Secure aggregation needs <b>N ≥ 3</b>, or it must be paired
+    with the noise from station <b>06</b>. That is why the two defenses are complementary, not alternatives.</div>
   </div>
 </section>
 
 <!-- ============ PAGE 6 : DIFFERENTIAL PRIVACY ============ -->
 <section class="page" id="page6">
-  <p class="eyebrow">06 — deniability by design</p>
-  <h1 class="title">Add just enough noise to make one person invisible.</h1>
-  <p class="lede">Even a shared embedding can leak. Differential privacy blurs it so two datasets differing by one
-  user look <b>almost identical</b>. Shrink the budget <span class="tag-priv">ε</span> and the curves drift together —
-  the attacker loses the trail, at a measured cost to accuracy.</p>
+  <p class="eyebrow">06 — bounding what the factors reveal</p>
+  <h1 class="title">Add just enough noise to make one user deniable.</h1>
+  <p class="lede">Secure aggregation hides the message <em>in transit</em>. But the converged factors are shared by design
+  (<span class="mono">Xᵢ → Z</span>), and embeddings leak attributes and memberships. Differential privacy bounds that leak
+  with a <b>formal guarantee</b> — and it slots into the CDIMF loop as three extra lines.</p>
+
+  <div class="panel" style="margin-bottom:24px">
+    <p class="section-k">Implementation</p>
+    <h3>Where DP goes in the CDIMF round</h3>
+    <p class="sub">Only the X-step's outgoing message changes. The ALS solver, ρ, Z-step, and dual update are untouched.</p>
+
+    <div class="eq" style="line-height:2.05">
+      <span style="color:var(--dim)">for round k = 1 … K, at each domain i:</span><br>
+      &nbsp;&nbsp;<b>1.</b> Xᵢ, Yᵢ ← local ALS solve &nbsp;<span style="color:var(--dim)">(unchanged)</span><br>
+      &nbsp;&nbsp;<b>2.</b> <span class="hl">clip</span> every shared-user row: &nbsp; x̄ᵤ ← xᵤ · min( 1 , <b>B</b> / ‖xᵤ‖₂ )
+        &nbsp;<span style="color:var(--dim)">← bounds sensitivity</span><br>
+      &nbsp;&nbsp;<b>3.</b> form the message &nbsp; wᵢ = X̄ᵢ + Uᵢ<br>
+      &nbsp;&nbsp;<b>4.</b> <span class="hl">add noise</span>: &nbsp; w̃ᵢ = wᵢ + <b>𝒩(0, σ²I)</b>,
+        &nbsp; σ = Δ₂·√(2 ln(1.25/δ)) / ε<sub>round</sub><br>
+      &nbsp;&nbsp;<b>5.</b> secure-aggregate the w̃ᵢ &nbsp;<span style="color:var(--dim)">(station 05)</span><br>
+      &nbsp;&nbsp;<b>6.</b> Z ← prox<sub>g</sub>( ⟨X̃⟩ + ⟨U⟩ ) ; &nbsp; Uᵢ ← Uᵢ + (Xᵢ − Z) &nbsp;<span style="color:var(--dim)">(unchanged)</span><br>
+      <span style="color:var(--dim)">after K rounds: compose the per-round budgets → total ε</span>
+    </div>
+
+    <div class="grid2" style="gap:18px;margin-top:16px">
+      <div>
+        <div class="mlabel" style="color:var(--user)">Why clipping comes first</div>
+        <p style="color:var(--muted);font-size:13px;margin:0">Noise must scale with how much <em>one user</em> can move the output.
+        Un-clipped, a single row is unbounded, so no finite σ suffices. Clipping to <b>B</b> forces the L₂ sensitivity
+        <span class="mono">Δ₂ ≤ 2B</span> (replace-one-user) or <span class="mono">≤ B</span> (add/remove).</p>
+      </div>
+      <div>
+        <div class="mlabel" style="color:var(--priv)">Why composition matters</div>
+        <p style="color:var(--muted);font-size:13px;margin:0">A message goes out <em>every</em> round, so privacy loss accumulates.
+        Rényi-DP composes tightly:
+        <span class="mono">ε(δ) = min<sub>α&gt;1</sub> [ K·α·Δ₂²/(2σ²) + ln(1/δ)/(α−1) ]</span>.
+        Fewer rounds (larger aggregation period) ⇒ less noise for the same total ε.</p>
+      </div>
+    </div>
+  </div>
 
   <div class="grid2">
     <div class="panel">
       <h3>Indistinguishability</h3>
-      <p class="sub">Two neighbouring datasets (differ by one user) → two output distributions.</p>
+      <p class="sub">Two neighbouring datasets (differ by one user) → two output distributions. DP forces them to overlap.</p>
       <svg id="dp-curves" viewBox="0 0 460 260" role="img" aria-label="two gaussian output distributions"></svg>
       <div class="range" style="margin-top:16px;min-width:100%">
-        <label>privacy budget ε <b id="dp-eps">1.00</b></label>
+        <label>per-round budget ε<sub>round</sub> <b id="dp-eps">1.00</b></label>
         <input type="range" id="dp-slider" min="10" max="500" value="100" step="1"/>
       </div>
-      <div class="hint">smaller ε = stronger privacy = more noise (σ ∝ 1/ε)</div>
+      <div class="range" style="margin-top:12px;min-width:100%">
+        <label>ADMM rounds K <b id="dp-K">12</b></label>
+        <input type="range" id="dp-kslider" min="1" max="60" value="12" step="1"/>
+      </div>
+      <div class="hint">smaller ε = more noise = stronger privacy · more rounds = more total leakage</div>
     </div>
     <div class="panel">
       <h3>The trade-off</h3>
-      <p class="sub">A jittering sample, the attacker's odds, and the price in accuracy.</p>
+      <p class="sub">A jittering released value, the attacker's odds, and the price in accuracy.</p>
       <svg id="dp-side" viewBox="0 0 460 260" role="img" aria-label="privacy utility tradeoff"></svg>
       <div class="readout" id="dp-readout"></div>
-      <div class="eq" style="margin-top:12px">σ = <b>B·√(2 ln(1.25/δ)) / ε</b> · densities within a factor of <b>e^ε</b></div>
+      <div class="readout" id="dp-total" style="margin-top:10px"></div>
+      <div class="note">DP and secure aggregation defend different things: aggregation stops anyone from reading a single message;
+      DP stops the <em>released aggregate and final factors</em> from betraying whether any one user was in the data at all.</div>
     </div>
   </div>
 </section>
@@ -1124,54 +1276,123 @@ function initCDIMF(){
    ============================================================ */
 function initSA(){
   const N=4,names=["D1","D2","D3","D4"];
-  let w=[6,9,4,7],masks={},stage=0;
-  const svg=document.getElementById('sa-stage'),readout=document.getElementById('sa-readout'),inputs=document.getElementById('sa-inputs');
-  inputs.innerHTML='';
-  for(let i=0;i<N;i++){
-    const wrap=document.createElement('div');wrap.style.cssText='display:flex;flex-direction:column;gap:3px';
-    const lab=document.createElement('label');lab.className='mono';lab.style.cssText='font-size:11px;color:var(--user)';lab.textContent=names[i];
-    const inp=document.createElement('input');inp.type='number';inp.value=w[i];inp.min=0;inp.max=20;
-    inp.style.cssText='width:60px;background:#fff;border:1px solid var(--line2);color:var(--ink);border-radius:8px;padding:6px 8px;font-family:IBM Plex Mono;font-size:12px';
-    inp.addEventListener('change',()=>{w[i]=clamp(+inp.value||0,0,20);reset();});
-    wrap.appendChild(lab);wrap.appendChild(inp);inputs.appendChild(wrap);
-  }
-  function genMasks(){masks={};for(let i=0;i<N;i++)for(let j=i+1;j<N;j++)masks[i+'-'+j]=Math.floor(Math.random()*17-8);}
-  function signedMask(i){let m=0;for(let j=0;j<N;j++){if(j===i)continue;const key=i<j?i+'-'+j:j+'-'+i;const s=masks[key]||0;m+=(i<j?s:-s);}return m;}
-  function reset(){stage=0;masks={};draw();readout.textContent='Set values, then step through the round.';}
-  function pos(i){const cx=230,cy=185,r=125;const a=-Math.PI/2+i*2*Math.PI/N;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+  let w=[], masks={}, stage=0;
+  const stageSVG=document.getElementById('sa-stage'), planeSVG=document.getElementById('sa-plane');
+  const readout=document.getElementById('sa-readout'), eqBox=document.getElementById('sa-eq');
+
+  const V2=(a,b)=>[a,b];
+  function randW(){w=Array.from({length:N},()=>V2(+( (Math.random()*3-1.5) ).toFixed(2), +( (Math.random()*3-1.5) ).toFixed(2)));}
+  function genMasks(){masks={};for(let i=0;i<N;i++)for(let j=i+1;j<N;j++)
+    masks[i+'-'+j]=V2(+( (Math.random()*6-3) ).toFixed(2), +( (Math.random()*6-3) ).toFixed(2));}
+  function signedMask(i){let m=[0,0];
+    for(let j=0;j<N;j++){if(j===i)continue;const key=i<j?i+'-'+j:j+'-'+i;const s=masks[key]||[0,0];
+      m[0]+=(i<j?s[0]:-s[0]);m[1]+=(i<j?s[1]:-s[1]);}
+    return m;}
+  const bcast=i=>{const m=signedMask(i);return [w[i][0]+m[0], w[i][1]+m[1]];};
+  const trueMean=()=>[w.reduce((a,v)=>a+v[0],0)/N, w.reduce((a,v)=>a+v[1],0)/N];
+  const fmtV=v=>`(${v[0].toFixed(2)}, ${v[1].toFixed(2)})`;
+
+  function reset(){stage=0;masks={};draw();
+    readout.innerHTML='Each domain holds its own <span class="mono">wᵢ = Xᵢ + Uᵢ</span>. Step through the round.';
+    eqBox.innerHTML='<span style="color:var(--dim)">masks not yet drawn</span>';}
+
+  const pos=i=>{const cx=230,cy=190,r=126,a=-Math.PI/2+i*2*Math.PI/N;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];};
+
+  /* ---- ring: topology + who holds what ---- */
   function draw(){
-    clear(svg);const cx=230,cy=185;
+    clear(stageSVG);const cx=230,cy=190;
     for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
       const a=pos(i),b=pos(j),on=stage>=1;
-      svg.appendChild(el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:on?'rgba(106,79,199,.4)':'var(--line2)','stroke-width':on?2:1,'stroke-dasharray':on?'':'4 4'}));
+      stageSVG.appendChild(el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],
+        stroke:on?'rgba(106,79,199,.40)':'var(--line2)','stroke-width':on?2:1,'stroke-dasharray':on?'':'4 4'}));
       if(on){const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,s=masks[i+'-'+j];
-        const g=el('g',{});g.appendChild(el('circle',{cx:mx,cy:my,r:12,fill:stage>=3?'#eef2f7':'var(--priv)',opacity:stage>=3?.6:1}));
-        g.appendChild(txt(el('text',{x:mx,y:my+4,fill:stage>=3?'var(--dim)':'#fff','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),(s>=0?'+':'')+s));
-        if(stage>=3)g.appendChild(txt(el('text',{x:mx,y:my-16,fill:'var(--good)','font-size':13,'text-anchor':'middle'}),'✓'));
-        svg.appendChild(g);}
+        const g=el('g',{});
+        g.appendChild(el('rect',{x:mx-25,y:my-10,width:50,height:20,rx:6,
+          fill:stage>=3?'#eef2f7':'var(--priv)',opacity:stage>=3?.6:1}));
+        g.appendChild(txt(el('text',{x:mx,y:my+4,fill:stage>=3?'var(--dim)':'#fff','font-size':8.5,
+          'text-anchor':'middle','font-family':'IBM Plex Mono'}),`s${i+1}${j+1}`));
+        if(stage>=3)g.appendChild(txt(el('text',{x:mx,y:my-14,fill:'var(--good)','font-size':12,'text-anchor':'middle'}),'✓'));
+        stageSVG.appendChild(g);}
     }
-    const trueSum=w.reduce((a,b)=>a+b,0);
-    svg.appendChild(el('circle',{cx,cy,r:34,fill:stage>=3?'var(--good)':'#fff',stroke:stage>=3?'var(--good)':'var(--line2)','stroke-width':2}));
-    svg.appendChild(txt(el('text',{x:cx,y:cy-2,fill:stage>=3?'#fff':'var(--dim)','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono'}),'Σ'));
-    svg.appendChild(txt(el('text',{x:cx,y:cy+13,fill:stage>=3?'#fff':'var(--muted)','font-size':13,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),stage>=3?trueSum:(stage>=2?'?':'')));
-    const defs=el('defs',{});const mk=el('marker',{id:'sa-arrow',markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});mk.appendChild(el('path',{d:'M0,0 L6,3 L0,6 Z',fill:stage>=3?'var(--good)':'var(--bad)'}));defs.appendChild(mk);svg.appendChild(defs);
+    const Zv=trueMean();
+    stageSVG.appendChild(el('circle',{cx,cy,r:40,fill:stage>=3?'var(--good)':'#fff',
+      stroke:stage>=3?'var(--good)':'var(--line2)','stroke-width':2}));
+    stageSVG.appendChild(txt(el('text',{x:cx,y:cy-6,fill:stage>=3?'#fff':'var(--dim)','font-size':9.5,
+      'text-anchor':'middle','font-family':'IBM Plex Mono'}),'Z-step'));
+    stageSVG.appendChild(txt(el('text',{x:cx,y:cy+9,fill:stage>=3?'#fff':'var(--muted)','font-size':10,
+      'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),
+      stage>=3?fmtV(Zv):(stage>=2?'Σ = ?':'')));
+    const defs=el('defs',{});const mk=el('marker',{id:'sa-arrow',markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});
+    mk.appendChild(el('path',{d:'M0,0 L6,3 L0,6 Z',fill:stage>=3?'var(--good)':'var(--bad)'}));defs.appendChild(mk);stageSVG.appendChild(defs);
     for(let i=0;i<N;i++){
-      const p=pos(i),broadcast=w[i]+signedMask(i);let val,col,ring;
-      if(stage===0){val=w[i];col='var(--user)';ring='var(--user)';}
-      else if(stage===1){val=w[i]+' , m='+(signedMask(i)>=0?'+':'')+signedMask(i);col='var(--user)';ring='var(--priv)';}
-      else{val=broadcast;col='var(--bad)';ring='var(--bad)';}
-      if(stage>=2){const dx=cx-p[0],dy=cy-p[1],L=Math.hypot(dx,dy),sx=p[0]+dx/L*28,sy=p[1]+dy/L*28,ex=cx-dx/L*38,ey=cy-dy/L*38;
-        svg.appendChild(el('line',{x1:sx,y1:sy,x2:ex,y2:ey,stroke:stage>=3?'var(--good)':'var(--bad)','stroke-width':2,opacity:.55,'marker-end':'url(#sa-arrow)'}));}
-      svg.appendChild(el('circle',{cx:p[0],cy:p[1],r:26,fill:'#fff',stroke:ring,'stroke-width':2.5}));
-      svg.appendChild(txt(el('text',{x:p[0],y:p[1]-6,fill:'var(--dim)','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono'}),names[i]));
-      svg.appendChild(txt(el('text',{x:p[0],y:p[1]+11,fill:col,'font-size':stage===1?9:13,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),val));
+      const p=pos(i);let val,col,ring;
+      if(stage===0){val=fmtV(w[i]);col='var(--user)';ring='var(--user)';}
+      else if(stage===1){val='wᵢ + mask';col='var(--priv)';ring='var(--priv)';}
+      else{val=fmtV(bcast(i));col='var(--bad)';ring='var(--bad)';}
+      if(stage>=2){const dx=cx-p[0],dy=cy-p[1],L=Math.hypot(dx,dy);
+        stageSVG.appendChild(el('line',{x1:p[0]+dx/L*30,y1:p[1]+dy/L*30,x2:cx-dx/L*44,y2:cy-dy/L*44,
+          stroke:stage>=3?'var(--good)':'var(--bad)','stroke-width':2,opacity:.55,'marker-end':'url(#sa-arrow)'}));}
+      stageSVG.appendChild(el('circle',{cx:p[0],cy:p[1],r:30,fill:'#fff',stroke:ring,'stroke-width':2.5}));
+      stageSVG.appendChild(txt(el('text',{x:p[0],y:p[1]-7,fill:'var(--dim)','font-size':10,'text-anchor':'middle','font-family':'IBM Plex Mono'}),names[i]));
+      stageSVG.appendChild(txt(el('text',{x:p[0],y:p[1]+8,fill:col,'font-size':8.5,'text-anchor':'middle','font-family':'IBM Plex Mono','font-weight':600}),val));
     }
+    drawPlane();
   }
-  document.getElementById('sa-mask').addEventListener('click',()=>{genMasks();stage=1;draw();readout.innerHTML='<span class="k">Pairwise masks drawn.</span> Each pair shares one secret: lower index <span style="color:var(--priv)">adds</span>, higher <span style="color:var(--priv)">subtracts</span>.';});
-  document.getElementById('sa-send').addEventListener('click',()=>{if(!Object.keys(masks).length)genMasks();stage=2;draw();const bc=w.map((v,i)=>v+signedMask(i));readout.innerHTML=`<span class="k">Broadcasts (look like noise):</span> <span class="v" style="color:var(--bad)">${bc.join(', ')}</span> — no single true value is visible.`;});
-  document.getElementById('sa-sum').addEventListener('click',()=>{if(!Object.keys(masks).length)genMasks();stage=3;draw();const ts=w.reduce((a,b)=>a+b,0);readout.innerHTML=`<span class="k">Masks cancel pairwise → recovered sum</span> <span class="v" style="color:var(--good)">= ${ts}</span> = Σwᵢ. Individual values never revealed.`;});
+
+  /* ---- latent plane: geometry of the cancellation ---- */
+  function drawPlane(){
+    clear(planeSVG);
+    const W=420,H=260,pad=30;
+    let pts=w.slice(); if(stage>=2) pts=pts.concat(Array.from({length:N},(_,i)=>bcast(i)));
+    pts=pts.concat([trueMean()]);
+    let mx=Math.max(2,...pts.map(p=>Math.abs(p[0]))), my=Math.max(2,...pts.map(p=>Math.abs(p[1])));
+    const m=Math.max(mx,my)*1.15;
+    const cx=W/2, cy=H/2, sc=Math.min((W-2*pad)/(2*m),(H-2*pad)/(2*m));
+    const X=a=>cx+a*sc, Y=b=>cy-b*sc;
+    planeSVG.appendChild(el('line',{x1:pad,y1:cy,x2:W-pad,y2:cy,stroke:'var(--line)','stroke-width':1}));
+    planeSVG.appendChild(el('line',{x1:cx,y1:pad,x2:cx,y2:H-pad,stroke:'var(--line)','stroke-width':1}));
+    // true messages
+    w.forEach((v,i)=>{
+      planeSVG.appendChild(el('circle',{cx:X(v[0]),cy:Y(v[1]),r:5,
+        fill:stage>=2?'none':'var(--user)',stroke:'var(--user)','stroke-width':stage>=2?1.5:0,opacity:stage>=2?.55:1}));
+      planeSVG.appendChild(txt(el('text',{x:X(v[0])+8,y:Y(v[1])+3,fill:'var(--user)','font-size':9,'font-family':'IBM Plex Mono',opacity:stage>=2?.6:1}),names[i]));
+    });
+    // masked broadcasts + displacement arrows
+    if(stage>=2){
+      w.forEach((v,i)=>{const b=bcast(i);
+        planeSVG.appendChild(el('line',{x1:X(v[0]),y1:Y(v[1]),x2:X(b[0]),y2:Y(b[1]),
+          stroke:'var(--priv)','stroke-width':1,'stroke-dasharray':'3 3',opacity:.7}));
+        planeSVG.appendChild(el('circle',{cx:X(b[0]),cy:Y(b[1]),r:5.5,fill:'var(--bad)',stroke:'#fff','stroke-width':1.4}));
+        planeSVG.appendChild(txt(el('text',{x:X(b[0])+8,y:Y(b[1])+3,fill:'var(--bad)','font-size':9,'font-family':'IBM Plex Mono'}),'w̃'+(i+1)));
+      });
+    }
+    // recovered Z
+    if(stage>=3){const z=trueMean();
+      planeSVG.appendChild(txt(el('text',{x:X(z[0]),y:Y(z[1])+6,fill:'var(--good)','font-size':18,'text-anchor':'middle'}),'★'));
+      planeSVG.appendChild(txt(el('text',{x:X(z[0])+11,y:Y(z[1])+4,fill:'var(--good)','font-size':9.5,'font-family':'IBM Plex Mono'}),'Z = ⟨X⟩+⟨U⟩'));
+    }
+    planeSVG.appendChild(txt(el('text',{x:W-pad,y:cy-6,fill:'var(--dim)','font-size':9,'text-anchor':'end','font-family':'IBM Plex Mono'}),'factor dim 0'));
+  }
+
+  document.getElementById('sa-mask').addEventListener('click',()=>{genMasks();stage=1;draw();
+    readout.innerHTML='<span class="k">Pairwise masks drawn.</span> Every pair {i,j} shares one secret vector <span class="mono">sᵢⱼ</span>: the lower index <span style="color:var(--priv)">adds</span> it, the higher <span style="color:var(--priv)">subtracts</span> it.';
+    eqBox.innerHTML='w̃ᵢ = wᵢ + Σ<sub>j&gt;i</sub> s<sub>ij</sub> − Σ<sub>j&lt;i</sub> s<sub>ij</sub>';});
+
+  document.getElementById('sa-send').addEventListener('click',()=>{if(!Object.keys(masks).length)genMasks();stage=2;draw();
+    readout.innerHTML=`<span class="k">Broadcasts, all pseudo-uniform:</span><br><span class="v" style="color:var(--bad)">${w.map((_,i)=>fmtV(bcast(i))).join(' · ')}</span><br>Nothing here resembles the true wᵢ — see them scatter in the plane.`;
+    eqBox.innerHTML='<span style="color:var(--bad)">the coordinator sees only w̃ᵢ — never wᵢ</span>';});
+
+  document.getElementById('sa-sum').addEventListener('click',()=>{if(!Object.keys(masks).length)genMasks();stage=3;draw();
+    const z=trueMean();
+    // verify numerically that masked sum == true sum
+    const ms=[0,1].map(k=>w.reduce((a,_,i)=>a+bcast(i)[k],0)/N);
+    const err=Math.max(Math.abs(ms[0]-z[0]),Math.abs(ms[1]-z[1]));
+    readout.innerHTML=`<span class="k">Masks cancel pairwise → Z-step receives</span> <span class="v" style="color:var(--good)">${fmtV(ms)}</span>, identical to the true mean ${fmtV(z)} <span style="color:var(--dim)">(err ${err.toExponential(1)})</span>. No individual wᵢ was ever exposed.`;
+    eqBox.innerHTML='Σᵢ w̃ᵢ = Σᵢ wᵢ &nbsp;⇒&nbsp; <b style="color:var(--good)">Z = prox<sub>g</sub>( ⟨X⟩ + ⟨U⟩ )</b>';});
+
+  document.getElementById('sa-rand').addEventListener('click',()=>{randW();reset();});
   document.getElementById('sa-reset').addEventListener('click',reset);
-  reset();
+  randW();reset();
 }
 
 /* ============================================================
@@ -1180,9 +1401,20 @@ function initSA(){
 function initDP(){
   const curves=document.getElementById('dp-curves'),side=document.getElementById('dp-side');
   const slider=document.getElementById('dp-slider'),epsLab=document.getElementById('dp-eps'),readout=document.getElementById('dp-readout');
-  const B=1,delta=1e-5;let jitterTimer=null;
-  const sigmaFor=e=>B*Math.sqrt(2*Math.log(1.25/delta))/e;
+  const kSlider=document.getElementById('dp-kslider'),kLab=document.getElementById('dp-K'),totalBox=document.getElementById('dp-total');
+  const B=1, D2=2*B, delta=1e-5;           // clip norm B -> replace-one-user sensitivity 2B
+  let jitterTimer=null;
+  const sigmaFor=e=>D2*Math.sqrt(2*Math.log(1.25/delta))/e;
   const gauss=(x,mu,s)=>Math.exp(-((x-mu)*(x-mu))/(2*s*s))/(s*Math.sqrt(2*Math.PI));
+  // Renyi-DP composition over K rounds, converted back to (eps, delta)
+  function epsTotal(sig,K){
+    let best=Infinity;
+    for(let a=1.01;a<=200;a+=0.05){
+      const v=K*a*D2*D2/(2*sig*sig)+Math.log(1/delta)/(a-1);
+      if(v<best)best=v;
+    }
+    return best;
+  }
   function drawCurves(eps){
     clear(curves);const W=460,H=260,pad=34,base=H-30,s=sigmaFor(eps),mu1=-0.5,mu2=0.5,span=Math.max(4,s*3+1);
     const X=x=>pad+(x+span)/(2*span)*(W-2*pad);
@@ -1193,13 +1425,13 @@ function initDP(){
       curves.appendChild(el('path',{d:dstr,fill:'none',stroke:col,'stroke-width':2.5}));}
     path(mu1,'var(--item)');path(mu2,'var(--priv)');
     curves.appendChild(txt(el('text',{x:X(mu1),y:20,fill:'var(--item)','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono'}),'dataset D'));
-    curves.appendChild(txt(el('text',{x:X(mu2),y:base+18,fill:'var(--priv)','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono'}),"neighbour D′"));
+    curves.appendChild(txt(el('text',{x:X(mu2),y:base+18,fill:'var(--priv)','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono'}),"neighbour D\u2032"));
     let ov=0,step=2*span/400;for(let x=-span;x<=span;x+=step)ov+=Math.min(gauss(x,mu1,s),gauss(x,mu2,s))*step;
     return{s,overlap:clamp(ov,0,1)};
   }
   function drawSide(eps,s,overlap){
     clear(side);const W=460;
-    side.appendChild(txt(el('text',{x:24,y:26,fill:'var(--dim)','font-size':11,'font-family':'IBM Plex Mono'}),'released = true + noise'));
+    side.appendChild(txt(el('text',{x:24,y:26,fill:'var(--dim)','font-size':11,'font-family':'IBM Plex Mono'}),'released w\u0303\u1d62 = w\u1d62 + noise'));
     const trackY=44,cx=230,halfW=170;
     side.appendChild(el('line',{x1:cx-halfW,y1:trackY,x2:cx+halfW,y2:trackY,stroke:'var(--line2)','stroke-width':1}));
     side.appendChild(el('circle',{cx,cy:trackY,r:4,fill:'var(--good)'}));
@@ -1218,13 +1450,23 @@ function initDP(){
     side.appendChild(el('path',{d:dstr,fill:'none',stroke:'var(--user)','stroke-width':2,opacity:.85}));
     const ex=gx+clamp((eps-0.1)/4.9,0,1)*gw;
     side.appendChild(el('circle',{cx:ex,cy:gy+gh-util*gh,r:5,fill:'var(--user)',stroke:'#fff','stroke-width':2}));
-    side.appendChild(txt(el('text',{x:gx,y:gy+gh+16,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'ε →'));
+    side.appendChild(txt(el('text',{x:gx,y:gy+gh+16,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'\u03b5 \u2192'));
     if(jitterTimer)clearInterval(jitterTimer);
     jitterTimer=setInterval(()=>{const u1=Math.random(),u2=Math.random(),z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2),off=clamp(z*(s/6),-1,1)*halfW;jitterDot.setAttribute('cx',cx+off);},90);
-    readout.innerHTML=`<span class="k">σ =</span> <span class="v">${s.toFixed(2)}</span> · <span class="k">overlap =</span> <span class="v" style="color:var(--priv)">${(overlap*100).toFixed(0)}%</span> · <span class="k">attacker edge =</span> <span class="v" style="color:${adv>.5?'var(--bad)':'var(--good)'}">${(adv*100).toFixed(0)}%</span>`;
+    readout.innerHTML=`<span class="k">clip B =</span> <span class="v">${B}</span> \u00b7 <span class="k">\u0394\u2082 =</span> <span class="v">${D2}</span> \u00b7 <span class="k">\u03c3 =</span> <span class="v">${s.toFixed(2)}</span> \u00b7 <span class="k">overlap =</span> <span class="v" style="color:var(--priv)">${(overlap*100).toFixed(0)}%</span> \u00b7 <span class="k">attacker edge =</span> <span class="v" style="color:${adv>.5?'var(--bad)':'var(--good)'}">${(adv*100).toFixed(0)}%</span>`;
   }
-  function update(){const eps=+slider.value/100;epsLab.textContent=eps.toFixed(2);const{s,overlap}=drawCurves(eps);drawSide(eps,s,overlap);}
-  slider.addEventListener('input',update);update();
+  function update(){
+    const eps=+slider.value/100, K=+kSlider.value;
+    epsLab.textContent=eps.toFixed(2); kLab.textContent=K;
+    const {s,overlap}=drawCurves(eps);
+    drawSide(eps,s,overlap);
+    const tot=epsTotal(s,K);
+    const col = tot<1?'var(--good)':(tot<8?'var(--user)':'var(--bad)');
+    totalBox.innerHTML=`<span class="k">after K = ${K} rounds \u2192 total budget</span> <span class="v" style="color:${col};font-weight:600">\u03b5 \u2248 ${tot.toFixed(2)}</span> <span class="k">at \u03b4 = 1e-5</span><br><span style="color:var(--dim);font-size:11.5px">R\u00e9nyi composition: \u03b5 = min\u2090 [ K\u00b7\u03b1\u00b7\u0394\u2082\u00b2/(2\u03c3\u00b2) + ln(1/\u03b4)/(\u03b1\u22121) ]</span>`;
+  }
+  slider.addEventListener('input',update);
+  kSlider.addEventListener('input',update);
+  update();
 }
 </script>
 </body>
