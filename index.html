@@ -122,9 +122,10 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
       <button class="tab active" data-p="0"><span class="n">00</span>Cover</button>
       <button class="tab" data-p="1"><span class="n">01</span>Matrix Factorization</button>
       <button class="tab" data-p="2"><span class="n">02</span>Implicit Feedback</button>
-      <button class="tab" data-p="3"><span class="n">03</span>Scaling&nbsp;d</button>
-      <button class="tab" data-p="4"><span class="n">04</span>Secure Aggregation</button>
-      <button class="tab" data-p="5"><span class="n">05</span>Differential Privacy</button>
+      <button class="tab" data-p="3"><span class="n">03</span>CDIMF</button>
+      <button class="tab" data-p="4"><span class="n">04</span>Scaling&nbsp;d</button>
+      <button class="tab" data-p="5"><span class="n">05</span>Secure Aggregation</button>
+      <button class="tab" data-p="6"><span class="n">06</span>Differential Privacy</button>
     </nav>
   </div>
 </header>
@@ -219,23 +220,15 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
         <div class="readout mono" style="margin:0;flex:1" id="solv-tag">stochastic gradient descent · small steps, every rating</div>
       </div>
 
-      <div class="eq" id="solv-eq" style="margin-bottom:18px"></div>
+      <div class="eq" id="solv-eq" style="margin-bottom:16px"></div>
 
-      <div class="grid2">
-        <div>
-          <div class="mlabel" style="color:var(--user)">U — user factors, per-epoch movement</div>
-          <svg id="mf-evolU" viewBox="0 0 420 190" role="img" aria-label="user factor evolution"></svg>
-        </div>
-        <div>
-          <div class="mlabel" style="color:var(--item)">V — item factors, per-epoch movement</div>
-          <svg id="mf-evolV" viewBox="0 0 420 190" role="img" aria-label="item factor evolution"></svg>
-        </div>
+      <div class="controls" style="margin-top:0;margin-bottom:12px">
+        <span class="hint" style="margin:0">subproblem for user:</span>
+        <div id="solv-users" style="display:flex;gap:5px"></div>
       </div>
 
-      <div class="chips">
-        <span class="chip"><span class="sw" style="background:var(--user)"></span>current value (bar length)</span>
-        <span class="chip"><span class="sw" style="background:var(--good)"></span>Δ this epoch (how far it moved)</span>
-      </div>
+      <svg id="mf-viz" viewBox="0 0 860 340" role="img" aria-label="solver geometry"></svg>
+      <div class="readout" id="mf-vizout"></div>
       <div class="note" id="solv-note"></div>
     </div>
   </div>
@@ -248,6 +241,39 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
   <p class="lede">Netflix sees a <b>watch</b>, Amazon a <b>buy</b>, Spotify a <b>play</b> — a plain <span class="mono">1</span>,
   and otherwise silence. Silence isn't "dislike," it's "maybe unseen," so implicit MF trusts the ones and stays soft
   on the zeros. Toggle cells and watch <span class="tag-good">recommendations</span> surface.</p>
+
+  <div class="panel" style="margin-bottom:24px">
+    <p class="section-k">From basic MF to implicit MF</p>
+    <h3>Three edits turn one model into the other</h3>
+    <p class="sub">The factorization <span class="mono">r̂ᵤᵢ = uᵤᵀvᵢ</span> never changes. Only what we fit, and how much we trust it, changes.</p>
+    <div class="grid2" style="gap:18px">
+      <div>
+        <div class="mlabel" style="color:var(--dim)">BASIC (explicit)</div>
+        <div class="eq" style="line-height:1.9">
+          min Σ<sub><b style="color:var(--bad)">(u,i) ∈ observed</b></sub> ( r<sub>ui</sub> − uᵤᵀvᵢ )² + λ(‖U‖²+‖V‖²)
+        </div>
+        <ul style="color:var(--muted);font-size:13px;padding-left:18px;margin-top:12px">
+          <li><b>target</b> = the star rating, 1…5</li>
+          <li><b>sum</b> only over cells we actually saw</li>
+          <li>blanks are simply <em>skipped</em></li>
+        </ul>
+      </div>
+      <div>
+        <div class="mlabel" style="color:var(--user)">IMPLICIT (iALS)</div>
+        <div class="eq" style="line-height:1.9">
+          min Σ<sub><b style="color:var(--good)">all (u,i) ∈ U×I</b></sub> <span class="hl">c<sub>ui</sub></span> ( <span class="hl">p<sub>ui</sub></span> − uᵤᵀvᵢ )² + λ(‖U‖²+‖V‖²)
+        </div>
+        <ul style="color:var(--muted);font-size:13px;padding-left:18px;margin-top:12px">
+          <li><b>preference</b> p<sub>ui</sub> = 1 if interacted, else 0</li>
+          <li><b>confidence</b> c<sub>ui</sub> = 1+α if interacted, else α</li>
+          <li>sum over <em>every</em> pair — blanks are weak zeros, not skips</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note">Why it must change: a "0" is missing data, not a bad review. Skipping zeros (basic MF) leaves the model free to
+    predict 1 everywhere; treating them as hard zeros calls every unseen film bad. iALS threads the needle — zeros are pulled
+    toward 0 but with <b>low confidence α</b>, so a strong pattern can still lift an unseen item above them. That lift <em>is</em> the recommendation.</div>
+  </div>
 
   <div class="grid2">
     <div class="panel">
@@ -270,18 +296,111 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
   </div>
 </section>
 
-<!-- ============ PAGE 3 : SCALING d (two synced auto sections) ============ -->
+<!-- ============ PAGE 3 : CDIMF ============ -->
 <section class="page" id="page3">
-  <p class="eyebrow">03 — the new update rule</p>
+  <p class="eyebrow">03 — two domains, one set of users</p>
+  <h1 class="title">Learn together, without pooling the data.</h1>
+  <p class="lede">Two companies share customers but not catalogs. Each runs its own ALS locally; a
+  <span class="tag-good">consensus vector Z</span> pulls their <span class="tag-user">shared-user factors</span> together
+  round by round. Nobody ships raw histories — only the quantity <span class="mono">Xᵢ + Uᵢ</span>. Watch the two clouds
+  meet, then read the fine print.</p>
+
+  <div class="eq" style="margin-bottom:22px">
+    <b>X-step</b> Xᵢ ← argmin Fᵢ(Xᵢ,Yᵢ) + (ρ/2)‖Xᵢ − Z + Uᵢ‖²  &nbsp;·&nbsp;
+    <b>Z-step</b> Z ← prox<sub>g</sub>( ⟨X⟩ + ⟨U⟩ )  &nbsp;·&nbsp;
+    <b>dual</b> Uᵢ ← Uᵢ + (Xᵢ − Z)
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>The consensus round</h3>
+      <p class="sub">Each domain's users (dots) drift from its own local optimum toward the shared Z.</p>
+      <svg id="cd-stage" viewBox="0 0 460 340" role="img" aria-label="two domains converging to consensus"></svg>
+      <div class="chips">
+        <span class="chip"><span class="sw" style="background:var(--user)"></span>Domain A factors X₁</span>
+        <span class="chip"><span class="sw" style="background:var(--item)"></span>Domain B factors X₂</span>
+        <span class="chip"><span class="sw" style="background:var(--good)"></span>consensus Z</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Convergence</h3>
+      <p class="sub">Primal residual ‖Xᵢ − Z‖ — how far the domains still disagree.</p>
+      <svg id="cd-res" viewBox="0 0 460 200" role="img" aria-label="primal residual per round"></svg>
+      <div class="controls">
+        <button class="btn primary" id="cd-play">⏸ Pause</button>
+        <button class="btn ghost" id="cd-reset">Reset</button>
+        <div class="readout mono" style="margin:0;flex:1" id="cd-status">round 0</div>
+      </div>
+      <div class="range" style="margin-top:14px;min-width:100%">
+        <label>sharing strength ρ <b id="cd-rho">1.0</b></label>
+        <input type="range" id="cd-slider" min="0" max="300" value="100" step="1"/>
+      </div>
+      <div class="hint">ρ = 0 → two independent single-domain ALS runs. Larger ρ → consensus in fewer rounds.</div>
+      <div class="note" id="cd-note"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;border-color:var(--bad)">
+    <p class="section-k" style="color:var(--bad)">The fine print</p>
+    <h3>What actually crosses the wire</h3>
+    <p class="sub">CDIMF claims the broadcast <span class="mono">Xᵢ + Uᵢ</span> conceals the factors. It doesn't.</p>
+    <div class="eq" style="line-height:2">
+      U⁰ = <b>0</b> &nbsp;⇒&nbsp; the first message <em>is</em> X¹ᵢ, in the clear.<br>
+      Z is the public mean of the messages &nbsp;⇒&nbsp; anyone can recompute it.<br>
+      The dual update is deterministic &nbsp;⇒&nbsp; <span style="color:var(--bad)"><b>Uᵢ<sup>k+1</sup> = wᵢ<sup>k</sup> − Z<sup>k+1</sup></b></span>,
+      then <span style="color:var(--bad)"><b>Xᵢ<sup>k+1</sup> = wᵢ<sup>k</sup> − Uᵢ<sup>k</sup></b></span> — by induction, every factor, every round.
+    </div>
+    <div class="note">So the mask offers no secrecy against a passive observer. Stations <b>05</b> and <b>06</b> fix exactly this:
+    <b>secure aggregation</b> hides the individual messages, and <b>differential privacy</b> bounds what the shared factors reveal.</div>
+  </div>
+</section>
+
+<!-- ============ PAGE 4 : SCALING d (two synced auto sections) ============ -->
+<section class="page" id="page4">
+  <p class="eyebrow">04 — the new update rule</p>
   <h1 class="title">Turn up <span class="tag-user">d</span> for richer factors — the cost stays friendly.</h1>
   <p class="lede">Both panels run the <b>same</b> latent dimension as it climbs automatically. The
   <span class="tag-bad">standard</span> all-pairs cost is dominated by the catalog and balloons; the
   <span class="tag-good">proposed</span> Gram-trick update grows only like <b>d²</b> and each factor solves
   independently, in parallel.</p>
 
-  <div class="eq" style="margin-bottom:22px">
-    [ <b>Bᵀ diag(c²) B</b> <span class="hl">+ (ρ + λr²) I<sub>d</sub></span> ] a = Bᵀ(p ∘ c²) + ρh
-    &nbsp;→&nbsp; one <span class="hl">d×d</span> solve per user/item.
+  <div class="panel" style="margin-bottom:22px">
+    <p class="section-k">Derivation</p>
+    <h3>Where the update rule comes from</h3>
+    <p class="sub">Every CDIMF factor update — user or item, local or shared — is one instance of the same convex subproblem.</p>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 0 · the subproblem.</b><br>
+      f(A) = ½‖C ∘ (P − ABᵀ)‖²<sub>F</sub> + (λ/2)‖RA‖²<sub>F</sub> + <span class="hl">(ρ/2)‖A − H‖²<sub>F</sub></span>
+      &nbsp;&nbsp;<span style="color:var(--dim)">← the ρ term is the consensus pull from station 03</span>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 1 · set the gradient to zero.</b> R is diagonal, so<br>
+      ∂f/∂A = −[ C<sup>∘2</sup> ∘ (P − ABᵀ) ] B + λR²A + ρ(A − H) &nbsp;=&nbsp; <b>0</b>
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 2 · the rows decouple.</b> Rows of A interact only through the shared B, so take one row <em>a</em>
+      (with p, c the matching rows of P, C and r its scalar reg. weight):<br>
+      −[ (p − aBᵀ) ∘ c<sup>∘2</sup> ] B + λr²a + ρ(a − h) = 0
+    </div>
+
+    <div class="eq" style="margin-bottom:14px">
+      <b>Step 3 · collect the terms in <em>a</em>.</b> Using (aBᵀ)diag(c<sup>∘2</sup>)B = a·Bᵀdiag(c<sup>∘2</sup>)B:<br>
+      a·Bᵀdiag(c<sup>∘2</sup>)B + λr²a + ρa &nbsp;=&nbsp; (p ∘ c<sup>∘2</sup>)B + ρh
+    </div>
+
+    <div class="eq" style="border-color:var(--user);background:rgba(217,131,36,.06)">
+      <b>Step 4 · transpose → the new form.</b><br>
+      <span style="font-size:14.5px">[ <b>Bᵀ diag(c<sup>∘2</sup>) B</b> <span class="hl">+ (ρ + λr²) I<sub>d</sub></span> ] <b>a</b> &nbsp;=&nbsp; <b>Bᵀ(p ∘ c<sup>∘2</sup>) + ρh</b></span><br>
+      <span style="color:var(--dim)">a d×d system per factor · solved independently · ρ=0, h=0 recovers plain iALS</span>
+    </div>
+
+    <div class="note">Read the boxed line as a cost statement: the matrix to invert is <b>d×d</b> — the catalog size never enters it.
+    The all-pairs term hides inside <span class="mono">Bᵀdiag(c<sup>∘2</sup>)B</span>, which collapses to a single reusable
+    <b>Gram matrix</b> α·BᵀB computed once per epoch. That is exactly why the curves below diverge.</div>
   </div>
 
   <div class="controls" style="margin-bottom:18px">
@@ -307,9 +426,9 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
   </div>
 </section>
 
-<!-- ============ PAGE 4 : SECURE AGGREGATION ============ -->
-<section class="page" id="page4">
-  <p class="eyebrow">04 — share the sum, not the secret</p>
+<!-- ============ PAGE 5 : SECURE AGGREGATION ============ -->
+<section class="page" id="page5">
+  <p class="eyebrow">05 — share the sum, not the secret</p>
   <h1 class="title">Four companies. One shared total. No one's numbers exposed.</h1>
   <p class="lede">Each domain must add its <span class="tag-user">factor update</span> to a shared average without
   revealing it. Every pair shares a secret mask: one adds it, the other subtracts it. Broadcasts look like
@@ -341,9 +460,9 @@ table.mat td{width:36px;height:30px;text-align:center;border-radius:7px;font-fam
   </div>
 </section>
 
-<!-- ============ PAGE 5 : DIFFERENTIAL PRIVACY ============ -->
-<section class="page" id="page5">
-  <p class="eyebrow">05 — deniability by design</p>
+<!-- ============ PAGE 6 : DIFFERENTIAL PRIVACY ============ -->
+<section class="page" id="page6">
+  <p class="eyebrow">06 — deniability by design</p>
   <h1 class="title">Add just enough noise to make one person invisible.</h1>
   <p class="lede">Even a shared embedding can leak. Differential privacy blurs it so two datasets differing by one
   user look <b>almost identical</b>. Shrink the budget <span class="tag-priv">ε</span> and the curves drift together —
@@ -386,8 +505,8 @@ function heat(v){v=clamp(v,0,1);const c1=[237,242,248],c2=[22,104,176];const r=M
 
 const tabs=[...document.querySelectorAll('.tab')];
 const pages=[...document.querySelectorAll('.page')];
-const INIT=[null,initMF,initIMF,initD,initSA,initDP];
-const inited=[true,false,false,false,false,false];
+const INIT=[null,initMF,initIMF,initCDIMF,initD,initSA,initDP];
+const inited=[true,false,false,false,false,false,false];
 function show(i){
   tabs.forEach((t,k)=>t.classList.toggle('active',k===i));
   pages.forEach((p,k)=>p.classList.toggle('active',k===i));
@@ -402,9 +521,10 @@ document.getElementById('begin').addEventListener('click',()=>show(1));
 const stations=[
   {n:'01',t:'Matrix Factorization',d:'ratings ≈ U × Vᵀ'},
   {n:'02',t:'Implicit Feedback',d:'clicks, not stars'},
-  {n:'03',t:'Scaling d',d:'why bigger is fine'},
-  {n:'04',t:'Secure Aggregation',d:'share the sum only'},
-  {n:'05',t:'Differential Privacy',d:'noise as cover'}
+  {n:'03',t:'CDIMF',d:'two domains, one Z'},
+  {n:'04',t:'Scaling d',d:'why bigger is fine'},
+  {n:'05',t:'Secure Aggregation',d:'share the sum only'},
+  {n:'06',t:'Differential Privacy',d:'noise as cover'}
 ];
 const cm=document.getElementById('cover-map');
 stations.forEach((s,idx)=>{
@@ -438,8 +558,8 @@ function initMF(){
   function recordDeltas(before){
     dU=U.map((r,u)=>r.map((x,k)=>Math.abs(x-before.U[u][k])));
     dV=V.map((r,i)=>r.map((x,k)=>Math.abs(x-before.V[i][k])));
-    for(let u=0;u<nU;u++){trailU[u].push(U[u].slice());if(trailU[u].length>40)trailU[u].shift();}
-    for(let i=0;i<nI;i++){trailV[i].push(V[i].slice());if(trailV[i].length>40)trailV[i].shift();}
+    for(let u=0;u<nU;u++){trailU[u].push(U[u].slice());if(trailU[u].length>700)trailU[u].shift();}
+    for(let i=0;i<nI;i++){trailV[i].push(V[i].slice());if(trailV[i].length>700)trailV[i].shift();}
   }
 
   /* --- SGD: tiny steps along the gradient, one known rating at a time --- */
@@ -569,69 +689,219 @@ function initMF(){
     status.textContent=`RMSE ${rmse().toFixed(3)} · epoch ${epoch}`;
   }
 
-  /* ---------- Section C: factor evolution ---------- */
-  const evolU=document.getElementById('mf-evolU'), evolV=document.getElementById('mf-evolV');
+  /* ---------- Section C: solver geometry ---------- */
+  const viz=document.getElementById('mf-viz');
+  const vizout=document.getElementById('mf-vizout');
   const solvEq=document.getElementById('solv-eq'), solvTag=document.getElementById('solv-tag'), solvNote=document.getElementById('solv-note');
+  let selU=0;
   const EQ={
     sgd:`for each observed r<sub>ui</sub>: &nbsp; e = r<sub>ui</sub> − u<sub>u</sub>ᵀv<sub>i</sub><br>
-         <b>u<sub>u</sub> ← u<sub>u</sub> + η( e·v<sub>i</sub> − λu<sub>u</sub> )</b> &nbsp;&nbsp;
-         <b>v<sub>i</sub> ← v<sub>i</sub> + η( e·u<sub>u</sub> − λv<sub>i</sub> )</b>
-         &nbsp;&nbsp;<span class="hl">many small nudges</span>`,
-    als:`fix <b>V</b>, solve every user exactly: &nbsp; <b>u<sub>u</sub> = ( VᵀV + λI )<sup>−1</sup> Vᵀ r<sub>u</sub></b><br>
-         then fix <b>U</b>, solve every item: &nbsp; <b>v<sub>i</sub> = ( UᵀU + λI )<sup>−1</sup> Uᵀ r<sub>i</sub></b>
-         &nbsp;&nbsp;<span class="hl">one exact d×d solve per factor</span>`
+         <b>u<sub>u</sub> ← u<sub>u</sub> + η( e·v<sub>i</sub> − λu<sub>u</sub> )</b>
+         &nbsp;&nbsp;<span class="hl">walk downhill on the convex loss</span>`,
+    als:`fix <b>V</b>, then for user u the loss is a plane-fitting least-squares problem:<br>
+         <b>u<sub>u</sub> = ( VᵀV + λI )<sup>−1</sup> Vᵀ r<sub>u</sub></b>
+         &nbsp;&nbsp;<span class="hl">jump straight to the bottom, in one solve</span>`
   };
-  const TAG={sgd:'stochastic gradient descent · small steps, every rating',
-             als:'alternating least squares · freeze one side, solve the other'};
-  const NOTE={sgd:'SGD wanders: each factor drifts a little every epoch, so the trails are long and curved and the error falls gradually.',
-              als:'ALS leaps: the first sweep lands almost on the answer, so Δ collapses after a couple of epochs — that exactness is what CDIMF inherits.'};
+  const TAG={sgd:'stochastic gradient descent · small steps down the slope',
+             als:'alternating least squares · fit the plane exactly'};
+  const NOTE={
+    sgd:'The loss in uᵤ is a convex bowl (a quadratic). SGD takes many small steps along −∇L, tracing a curved path to the bottom. Note the bowl is drawn for the current V — in SGD both sides move, so the surface itself slowly reshapes underneath the walker.',
+    als:'With V frozen, predicting r̂ᵤᵢ = uᵤᵀvᵢ is a plane through the origin over the item-factor axes. ALS tilts that plane to minimise the squared vertical residuals (plus a small λ‖uᵤ‖² pull toward the origin) — exactly, in one solve. This is the same normal equation CDIMF solves, plus a ρ term.'
+  };
 
-  function evolPanel(svg,mat,deltas,names,col){
-    clear(svg);
-    const W=420,rowH=32,x0=52,barW=120,gap=14,top=22;
-    svg.appendChild(txt(el('text',{x:x0,y:12,fill:'var(--dim)','font-size':9.5,'font-family':'IBM Plex Mono'}),'factor k=0'));
-    svg.appendChild(txt(el('text',{x:x0+barW+gap+34,y:12,fill:'var(--dim)','font-size':9.5,'font-family':'IBM Plex Mono'}),'k=1'));
-    svg.appendChild(txt(el('text',{x:W-58,y:12,fill:'var(--good)','font-size':9.5,'font-family':'IBM Plex Mono'}),'Δ epoch'));
-    let maxAbs=0.5;mat.forEach(r=>r.forEach(v=>maxAbs=Math.max(maxAbs,Math.abs(v))));
-    let maxD=1e-4;deltas.forEach(r=>r.forEach(v=>maxD=Math.max(maxD,v)));
-    mat.forEach((row,r)=>{
-      const y=top+r*rowH;
-      svg.appendChild(txt(el('text',{x:x0-10,y:y+13,fill:col,'font-size':10.5,'text-anchor':'end','font-family':'IBM Plex Mono'}),names[r]));
-      row.forEach((v,k)=>{
-        const bx=x0+k*(barW/2+gap+30), half=barW/4;
-        const mid=bx+half;
-        svg.appendChild(el('line',{x1:mid,y1:y+2,x2:mid,y2:y+20,stroke:'var(--line2)','stroke-width':1}));
-        const w=Math.abs(v)/maxAbs*half;
-        svg.appendChild(el('rect',{x:v>=0?mid:mid-w,y:y+5,width:Math.max(1,w),height:12,rx:3,fill:col,opacity:.85}));
-        svg.appendChild(txt(el('text',{x:mid+half+6,y:y+15,fill:'var(--muted)','font-size':9.5,'font-family':'IBM Plex Mono'}),v.toFixed(2)));
-      });
-      // delta bar (movement this epoch)
-      const dTot=Math.hypot(deltas[r][0],deltas[r][1]);
-      const dw=clamp(dTot/maxD,0,1)*44;
-      svg.appendChild(el('rect',{x:W-58,y:y+5,width:44,height:12,rx:3,fill:'#eef2f7'}));
-      svg.appendChild(el('rect',{x:W-58,y:y+5,width:Math.max(1,dw),height:12,rx:3,fill:'var(--good)'}));
+  // observed items for a user
+  const obsOf=u=>{const o=[];for(let i=0;i<nI;i++)if(R[u][i]>0)o.push(i);return o;};
+  // quadratic pieces of the u-subproblem: L(w) = wᵀAw − 2bᵀw + c
+  function quad(u,lam){
+    let A=[[lam,0],[0,lam]],b=[0,0],c=0;
+    obsOf(u).forEach(i=>{
+      for(let a=0;a<2;a++){for(let k=0;k<2;k++)A[a][k]+=V[i][a]*V[i][k];b[a]+=R[u][i]*V[i][a];}
+      c+=R[u][i]*R[u][i];
     });
-    svg.setAttribute('viewBox',`0 0 ${W} ${top+mat.length*rowH+8}`);
+    return{A,b,c};
   }
+  const Lval=(w,q)=>{
+    const {A,b,c}=q;
+    return A[0][0]*w[0]*w[0]+2*A[0][1]*w[0]*w[1]+A[1][1]*w[1]*w[1]-2*(b[0]*w[0]+b[1]*w[1])+c;
+  };
+  function argmin(q){const{A,b}=q;const det=A[0][0]*A[1][1]-A[0][1]*A[1][0];
+    if(Math.abs(det)<1e-9)return[0,0];
+    return[(b[0]*A[1][1]-b[1]*A[0][1])/det,(A[0][0]*b[1]-A[1][0]*b[0])/det];}
+  function eig2(A){ // symmetric 2x2 → {l1,l2,v1,v2}
+    const a=A[0][0],b=A[0][1],d=A[1][1];
+    const tr=a+d, det=a*d-b*b;
+    const disc=Math.max(0,tr*tr/4-det), s=Math.sqrt(disc);
+    const l1=tr/2+s, l2=tr/2-s;
+    let v1;
+    if(Math.abs(b)>1e-9) v1=[l1-d,b]; else v1=[1,0];
+    const n1=Math.hypot(v1[0],v1[1])||1; v1=[v1[0]/n1,v1[1]/n1];
+    const v2=[-v1[1],v1[0]];
+    return{l1:Math.max(l1,1e-6),l2:Math.max(l2,1e-6),v1,v2};
+  }
+
+  /* ---- SGD: convex loss bowl with descent path ---- */
+  function drawBowl(){
+    clear(viz);
+    viz.setAttribute('viewBox','0 0 560 300');
+    viz.style.maxWidth='560px';viz.style.margin='0 auto';viz.style.overflow='hidden';
+    const W=560,H=300,padL=52,padT=20,padB=38,padR=26;
+    const q=quad(selU,0.06);
+    const w=argmin(q), cur=U[selU].slice();
+    const path=trailU[selU];
+    const {l1,l2,v1,v2}=eig2(q.A);
+    const Lmin=Lval(w,q), Lstart=Math.max(Lval(path[0]||cur,q),Lmin+1e-3);
+    const levels=6;
+    // outermost contour's bounding box, so the bowl always fits the frame
+    const cMax=(Lstart-Lmin);
+    const R1=Math.sqrt(cMax/l1), R2=Math.sqrt(cMax/l2);
+    const eDx=Math.hypot(R1*v1[0],R2*v2[0]), eDy=Math.hypot(R1*v1[1],R2*v2[1]);
+    // bounds over: descent path, current point, minimum, and the outer ellipse
+    const xs=path.map(p=>p[0]).concat([cur[0],w[0],w[0]-eDx,w[0]+eDx]);
+    const ys=path.map(p=>p[1]).concat([cur[1],w[1],w[1]-eDy,w[1]+eDy]);
+    let minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+    const cx0=(minx+maxx)/2, cy0=(miny+maxy)/2;
+    let hx=Math.max((maxx-minx)/2,0.4), hy=Math.max((maxy-miny)/2,0.4);
+    hx*=1.12; hy*=1.12;                                  // breathing room
+    const plotW=W-padL-padR, plotH=H-padT-padB;
+    const scale=Math.min(plotW/(2*hx), plotH/(2*hy));    // equal aspect: circles stay circles
+    const pcx=padL+plotW/2, pcy=padT+plotH/2;
+    const X=a=>pcx+(a-cx0)*scale;
+    const Y=b=>pcy-(b-cy0)*scale;
+    // clip everything to the plot rectangle
+    const defs0=el('defs',{});const cp=el('clipPath',{id:'bowlClip'});
+    cp.appendChild(el('rect',{x:padL,y:padT,width:plotW,height:plotH}));
+    defs0.appendChild(cp);viz.appendChild(defs0);
+    const g=el('g',{'clip-path':'url(#bowlClip)'});viz.appendChild(g);
+    // axes
+    viz.appendChild(el('line',{x1:padL,y1:H-padB,x2:W-padR,y2:H-padB,stroke:'var(--line2)','stroke-width':1}));
+    viz.appendChild(el('line',{x1:padL,y1:padT,x2:padL,y2:H-padB,stroke:'var(--line2)','stroke-width':1}));
+    viz.appendChild(txt(el('text',{x:W-padR,y:H-padB+16,fill:'var(--dim)','font-size':10,'text-anchor':'end','font-family':'IBM Plex Mono'}),'u[0] →'));
+    viz.appendChild(txt(el('text',{x:padL-4,y:padT-6,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'u[1] ↑'));
+    // elliptical contours (exact level sets), clipped
+    for(let k=levels;k>=1;k--){
+      const c=cMax*Math.pow(k/levels,2);
+      const r1=Math.sqrt(c/l1), r2=Math.sqrt(c/l2);
+      let ds='';
+      for(let t=0;t<=72;t++){
+        const th=t/72*2*Math.PI;
+        const a=w[0]+r1*Math.cos(th)*v1[0]+r2*Math.sin(th)*v2[0];
+        const b=w[1]+r1*Math.cos(th)*v1[1]+r2*Math.sin(th)*v2[1];
+        ds+=(t?'L':'M')+X(a).toFixed(1)+' '+Y(b).toFixed(1)+' ';
+      }
+      ds+='Z';
+      const shade=0.05+0.09*(1-k/levels);
+      g.appendChild(el('path',{d:ds,fill:`rgba(22,104,176,${shade.toFixed(3)})`,stroke:'rgba(22,104,176,.30)','stroke-width':1}));
+    }
+    viz.appendChild(txt(el('text',{x:W-padR,y:padT+2,fill:'var(--item)','font-size':10,'text-anchor':'end','font-family':'IBM Plex Mono'}),'contours of L(uᵤ)'));
+    // descent path
+    if(path.length>1){
+      let ds='';path.forEach((p,k)=>{ds+=(k?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)+' ';});
+      g.appendChild(el('path',{d:ds,fill:'none',stroke:'var(--user)','stroke-width':2.2,opacity:.9}));
+    }
+    // gradient arrow at current point (length in pixels, capped)
+    const gr=[2*(q.A[0][0]*cur[0]+q.A[0][1]*cur[1]-q.b[0]),2*(q.A[0][1]*cur[0]+q.A[1][1]*cur[1]-q.b[1])];
+    const gn=Math.hypot(gr[0],gr[1]);
+    const defs=el('defs',{});const mk=el('marker',{id:'gArrow',markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});
+    mk.appendChild(el('path',{d:'M0,0 L6,3 L0,6 Z',fill:'var(--good)'}));defs.appendChild(mk);viz.appendChild(defs);
+    if(gn>1e-6){
+      const len=Math.min(46,Math.max(14,gn*scale*0.10));
+      const ax=X(cur[0])-gr[0]/gn*len, ay=Y(cur[1])+gr[1]/gn*len;
+      g.appendChild(el('line',{x1:X(cur[0]),y1:Y(cur[1]),x2:ax,y2:ay,stroke:'var(--good)','stroke-width':2,'marker-end':'url(#gArrow)'}));
+      g.appendChild(txt(el('text',{x:ax+5,y:ay-4,fill:'var(--good)','font-size':10,'font-family':'IBM Plex Mono'}),'−∇L'));
+    }
+    // minimum + current
+    g.appendChild(txt(el('text',{x:X(w[0]),y:Y(w[1])+5,fill:'var(--bad)','font-size':15,'text-anchor':'middle'}),'★'));
+    g.appendChild(txt(el('text',{x:X(w[0])+9,y:Y(w[1])+4,fill:'var(--bad)','font-size':9.5,'font-family':'IBM Plex Mono'}),'minimum'));
+    g.appendChild(el('circle',{cx:X(cur[0]),cy:Y(cur[1]),r:5.5,fill:'var(--user)',stroke:'#fff','stroke-width':2}));
+    const dist=Math.hypot(cur[0]-w[0],cur[1]-w[1]);
+    vizout.innerHTML=`<span class="k">uᵤ =</span> <span class="v">(${cur[0].toFixed(2)}, ${cur[1].toFixed(2)})</span> · <span class="k">L =</span> <span class="v">${Lval(cur,q).toFixed(2)}</span> · <span class="k">steps taken</span> <span class="v">${Math.max(0,path.length-1)}</span> · <span class="k">distance to ★</span> <span class="v" style="color:${dist<0.05?'var(--good)':'var(--user)'}">${dist.toFixed(3)}</span>`;
+  }
+
+  /* ---- ALS: points + least-squares plane (axonometric) ---- */
+  function drawPlane(){
+    clear(viz);
+    viz.setAttribute('viewBox','0 0 760 320');
+    viz.style.maxWidth='760px';viz.style.margin='0 auto';viz.style.overflow='visible';
+    const W=760,H=320,cx=W*0.44,cy=H*0.70;
+    const obs=obsOf(selU);
+    const u=U[selU];
+    let xr=0.5,yr=0.5;obs.forEach(i=>{xr=Math.max(xr,Math.abs(V[i][0]));yr=Math.max(yr,Math.abs(V[i][1]));});
+    const AX=110,AY=52,AZ=34;                   // iso scales
+    const zn=r=>r/5;                             // ratings 0..5 → 0..1
+    const planeZ=(xnv,ynv)=>zn(u[0]*xnv*xr+u[1]*ynv*yr);
+    const proj=(xn_,yn_,z)=>[cx+(xn_-yn_)*AX*0.62, cy+(xn_+yn_)*AY*0.5 - z*AZ*2.6];
+    // base grid (item-factor plane, z=0)
+    for(let g=-1;g<=1;g+=0.5){
+      const a=proj(g,-1,0),b=proj(g,1,0),c=proj(-1,g,0),dd=proj(1,g,0);
+      viz.appendChild(el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'var(--line)','stroke-width':1}));
+      viz.appendChild(el('line',{x1:c[0],y1:c[1],x2:dd[0],y2:dd[1],stroke:'var(--line)','stroke-width':1}));
+    }
+    // axis labels
+    const lx=proj(1.25,-1,0),ly=proj(-1,1.25,0),lz=proj(-1,-1,1.15);
+    viz.appendChild(txt(el('text',{x:lx[0],y:lx[1],fill:'var(--item)','font-size':10.5,'font-family':'IBM Plex Mono'}),'v[0]'));
+    viz.appendChild(txt(el('text',{x:ly[0],y:ly[1],fill:'var(--item)','font-size':10.5,'font-family':'IBM Plex Mono'}),'v[1]'));
+    viz.appendChild(txt(el('text',{x:lz[0]-8,y:lz[1],fill:'var(--dim)','font-size':10.5,'text-anchor':'end','font-family':'IBM Plex Mono'}),'rating'));
+    // the fitted plane  z = u0*v0 + u1*v1
+    const corners=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>proj(a,b,planeZ(a,b)));
+    viz.appendChild(el('polygon',{points:corners.map(p=>p.join(',')).join(' '),
+      fill:'rgba(217,131,36,.16)',stroke:'var(--user)','stroke-width':2}));
+    // residual sticks + points
+    let sse=0;
+    obs.forEach(i=>{
+      const xn_=V[i][0]/xr, yn_=V[i][1]/yr;
+      const zData=zn(R[selU][i]), zFit=planeZ(xn_,yn_);
+      const pD=proj(xn_,yn_,zData), pF=proj(xn_,yn_,zFit), p0=proj(xn_,yn_,0);
+      const res=R[selU][i]-(u[0]*V[i][0]+u[1]*V[i][1]); sse+=res*res;
+      viz.appendChild(el('line',{x1:p0[0],y1:p0[1],x2:pD[0],y2:pD[1],stroke:'var(--line2)','stroke-width':1,'stroke-dasharray':'2 3'}));
+      viz.appendChild(el('line',{x1:pF[0],y1:pF[1],x2:pD[0],y2:pD[1],stroke:'var(--bad)','stroke-width':2.4,opacity:.85}));
+      viz.appendChild(el('circle',{cx:pF[0],cy:pF[1],r:3.2,fill:'none',stroke:'var(--user)','stroke-width':1.6}));
+      viz.appendChild(el('circle',{cx:pD[0],cy:pD[1],r:5.5,fill:'var(--item)',stroke:'#fff','stroke-width':1.6}));
+      viz.appendChild(txt(el('text',{x:pD[0]+9,y:pD[1]-6,fill:'var(--item)','font-size':10,'font-family':'IBM Plex Mono'}),`${iNames[i]}·${R[selU][i]}`));
+    });
+    // legend
+    const lg=[['var(--item)','observed rating (a dot)'],['var(--user)','fitted plane  r̂ = uᵤᵀvᵢ'],['var(--bad)','residual it minimises']];
+    lg.forEach((L,k)=>{
+      const y=26+k*20;
+      viz.appendChild(el('rect',{x:W-236,y:y-9,width:11,height:11,rx:3,fill:L[0]}));
+      viz.appendChild(txt(el('text',{x:W-218,y:y,fill:'var(--muted)','font-size':11,'font-family':'IBM Plex Mono'}),L[1]));
+    });
+    const wStar=argmin(quad(selU,0.35));
+    const gap=Math.hypot(u[0]-wStar[0],u[1]-wStar[1]);
+    vizout.innerHTML=`<span class="k">uᵤ =</span> <span class="v">(${u[0].toFixed(2)}, ${u[1].toFixed(2)})</span> · <span class="k">Σ residual² =</span> <span class="v">${sse.toFixed(2)}</span> · <span class="k">gap to exact solve</span> <span class="v" style="color:${gap<0.02?'var(--good)':'var(--user)'}">${gap.toFixed(3)}</span> ${gap<0.02?'<span style="color:var(--good)">— plane has landed on the regularised optimum</span>':''}`;
+  }
+
   function renderEvol(){
     solvEq.innerHTML=EQ[solver];solvTag.textContent=TAG[solver];solvNote.textContent=NOTE[solver];
-    evolPanel(evolU,U,dU,uNames,'var(--user)');
-    evolPanel(evolV,V,dV,iNames,'var(--item)');
+    if(solver==='sgd')drawBowl();else drawPlane();
   }
+
+  // user chips
+  const uBox=document.getElementById('solv-users');
+  uNames.forEach((nm,u)=>{
+    const b=document.createElement('button');b.className='btn'+(u===0?' primary':'');
+    b.style.padding='6px 11px';b.textContent=nm;
+    b.addEventListener('click',()=>{selU=u;[...uBox.children].forEach((c,k)=>c.className='btn'+(k===u?' primary':''));renderEvol();});
+    uBox.appendChild(b);
+  });
 
   function renderAll(){renderDecomp();renderSpace();renderLoss();renderEvol();}
 
-  function loop(){
+  let lastStep=0;
+  function loop(ts){
     if(!running)return;
-    const per=solver==='sgd'?4:1;                     // ALS converges fast: one sweep per frame
-    for(let s=0;s<per;s++){step();hist.push(rmse());}
-    renderAll();
-    const done=solver==='sgd'?epoch>600:epoch>40;
-    if(done){running=false;trainBtn.textContent='▶ Train';return;}
+    // time-gate so the optimisation is watchable, not a blur
+    const gap = solver==='sgd' ? 28 : 420;          // ms between steps
+    if(!ts||ts-lastStep>=gap){
+      lastStep=ts||0;
+      step();hist.push(rmse());
+      renderAll();
+      const done=solver==='sgd'?epoch>600:epoch>40;
+      if(done){running=false;trainBtn.textContent='▶ Train';return;}
+    }
     raf=requestAnimationFrame(loop);
   }
   const trainBtn=document.getElementById('mf-train');
-  trainBtn.addEventListener('click',()=>{running=!running;trainBtn.textContent=running?'⏸ Pause':'▶ Train';if(running)loop();});
+  trainBtn.addEventListener('click',()=>{running=!running;trainBtn.textContent=running?'⏸ Pause':'▶ Train';if(running){lastStep=0;raf=requestAnimationFrame(loop);}});
   document.getElementById('mf-reset').addEventListener('click',()=>{trainBtn.textContent='▶ Train';reset();});
 
   const bSgd=document.getElementById('solv-sgd'),bAls=document.getElementById('solv-als');
@@ -746,7 +1016,111 @@ function initD(){
 }
 
 /* ============================================================
-   PAGE 4 — SECURE AGGREGATION
+   PAGE 4 — CDIMF : ADMM consensus between two domains
+   ============================================================ */
+function initCDIMF(){
+  const nS=6;                                   // shared users
+  const stage=document.getElementById('cd-stage'), resSVG=document.getElementById('cd-res');
+  const status=document.getElementById('cd-status'), note=document.getElementById('cd-note');
+  const slider=document.getElementById('cd-slider'), rhoLab=document.getElementById('cd-rho');
+  const playBtn=document.getElementById('cd-play');
+  // each domain has its own local optimum m_i per shared user (different catalogs → different pull)
+  let M1,M2,X1,X2,Z,U1,U2,rho=1.0,round=0,hist=[],playing=true,timer=null,trail1,trail2;
+  function reset(){
+    M1=[],M2=[];
+    for(let u=0;u<nS;u++){
+      const ang=u/nS*2*Math.PI;
+      M1.push([Math.cos(ang)*1.5-1.5, Math.sin(ang)*1.5+0.6]);   // domain A cluster
+      M2.push([Math.cos(ang)*1.5+1.5, Math.sin(ang)*1.5-0.6]);   // domain B cluster
+    }
+    X1=M1.map(m=>m.slice());X2=M2.map(m=>m.slice());
+    Z=M1.map((m,u)=>[(M1[u][0]+M2[u][0])/2,(M1[u][1]+M2[u][1])/2]);
+    U1=M1.map(()=>[0,0]);U2=M2.map(()=>[0,0]);
+    trail1=X1.map(x=>[x.slice()]);trail2=X2.map(x=>[x.slice()]);
+    round=0;hist=[];draw();
+  }
+  // X-step for a quadratic local loss with optimum m and Hessian I:
+  //   argmin ½‖x−m‖² + (ρ/2)‖x − Z + U‖²  =  (m + ρ(Z−U)) / (1+ρ)
+  function admmRound(){
+    for(let u=0;u<nS;u++){
+      for(let k=0;k<2;k++){
+        X1[u][k]=(M1[u][k]+rho*(Z[u][k]-U1[u][k]))/(1+rho);
+        X2[u][k]=(M2[u][k]+rho*(Z[u][k]-U2[u][k]))/(1+rho);
+      }
+    }
+    for(let u=0;u<nS;u++)for(let k=0;k<2;k++)               // Z-step: identity prox = mean
+      Z[u][k]=((X1[u][k]+U1[u][k])+(X2[u][k]+U2[u][k]))/2;
+    for(let u=0;u<nS;u++)for(let k=0;k<2;k++){              // dual update
+      U1[u][k]+=X1[u][k]-Z[u][k];
+      U2[u][k]+=X2[u][k]-Z[u][k];
+    }
+    for(let u=0;u<nS;u++){
+      trail1[u].push(X1[u].slice());if(trail1[u].length>60)trail1[u].shift();
+      trail2[u].push(X2[u].slice());if(trail2[u].length>60)trail2[u].shift();
+    }
+    round++;
+    let r=0;for(let u=0;u<nS;u++)r+=Math.hypot(X1[u][0]-Z[u][0],X1[u][1]-Z[u][1])+Math.hypot(X2[u][0]-Z[u][0],X2[u][1]-Z[u][1]);
+    hist.push(r/(2*nS));
+    if(hist.length>140)hist.shift();
+  }
+  function draw(){
+    clear(stage);
+    const W=460,H=340,cx=W/2,cy=H/2,sc=52;
+    const P=v=>[cx+v[0]*sc,cy-v[1]*sc];
+    stage.appendChild(el('line',{x1:20,y1:cy,x2:W-20,y2:cy,stroke:'var(--line)','stroke-width':1}));
+    stage.appendChild(el('line',{x1:cx,y1:20,x2:cx,y2:H-20,stroke:'var(--line)','stroke-width':1}));
+    // local optima (ghost targets)
+    M1.forEach(m=>{const p=P(m);stage.appendChild(el('circle',{cx:p[0],cy:p[1],r:3,fill:'none',stroke:'var(--user)','stroke-width':1,opacity:.4}));});
+    M2.forEach(m=>{const p=P(m);stage.appendChild(el('circle',{cx:p[0],cy:p[1],r:3,fill:'none',stroke:'var(--item)','stroke-width':1,opacity:.4}));});
+    // trails
+    const trail=(arr,col)=>arr.forEach(h=>{if(h.length<2)return;let ds='';h.forEach((v,k)=>{const p=P(v);ds+=(k?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)+' ';});
+      stage.appendChild(el('path',{d:ds,fill:'none',stroke:col,'stroke-width':1.2,opacity:.3}));});
+    trail(trail1,'var(--user)');trail(trail2,'var(--item)');
+    // links X_i -> Z
+    for(let u=0;u<nS;u++){
+      const a=P(X1[u]),b=P(X2[u]),z=P(Z[u]);
+      stage.appendChild(el('line',{x1:a[0],y1:a[1],x2:z[0],y2:z[1],stroke:'var(--line2)','stroke-width':1,'stroke-dasharray':'3 3'}));
+      stage.appendChild(el('line',{x1:b[0],y1:b[1],x2:z[0],y2:z[1],stroke:'var(--line2)','stroke-width':1,'stroke-dasharray':'3 3'}));
+    }
+    for(let u=0;u<nS;u++){
+      const z=P(Z[u]);stage.appendChild(el('circle',{cx:z[0],cy:z[1],r:5,fill:'var(--good)',opacity:.9}));
+      const a=P(X1[u]);stage.appendChild(el('circle',{cx:a[0],cy:a[1],r:5,fill:'var(--user)',stroke:'#fff','stroke-width':1.2}));
+      const b=P(X2[u]);stage.appendChild(el('circle',{cx:b[0],cy:b[1],r:5,fill:'var(--item)',stroke:'#fff','stroke-width':1.2}));
+    }
+    stage.appendChild(txt(el('text',{x:24,y:24,fill:'var(--user)','font-size':11,'font-family':'IBM Plex Mono'}),'Domain A · local optima ○'));
+    stage.appendChild(txt(el('text',{x:24,y:40,fill:'var(--item)','font-size':11,'font-family':'IBM Plex Mono'}),'Domain B · local optima ○'));
+    drawRes();
+    const r=hist.length?hist[hist.length-1]:0;
+    status.textContent=`round ${round} · residual ${r.toFixed(4)}`;
+    note.innerHTML = rho===0
+      ? 'With <b>ρ = 0</b> the domains never talk: each sits on its own local optimum and the residual stays flat. This is plain single-domain ALS, run twice.'
+      : (r<0.02
+        ? `Converged: the shared-user factors <b style="color:var(--good)">agree</b> across domains, so each side now benefits from the other's data — without ever seeing it. Here Z settles exactly on the midpoint of the two local optima.`
+        : `ρ = ${rho.toFixed(1)} pulls each domain's factors toward Z — larger ρ reaches consensus in fewer rounds. <span style="color:var(--dim)">(In this idealised quadratic every ρ&gt;0 converges; in the full model, very large ρ destabilises the <em>item</em> factors, which aren't simulated here.)</span>`);
+  }
+  function drawRes(){
+    clear(resSVG);const W=460,H=200,pad=40,base=H-28;
+    resSVG.appendChild(el('line',{x1:pad,y1:base,x2:W-14,y2:base,stroke:'var(--line2)','stroke-width':1}));
+    resSVG.appendChild(el('line',{x1:pad,y1:14,x2:pad,y2:base,stroke:'var(--line2)','stroke-width':1}));
+    resSVG.appendChild(txt(el('text',{x:pad,y:11,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'‖Xᵢ − Z‖'));
+    resSVG.appendChild(txt(el('text',{x:W-40,y:base+16,fill:'var(--dim)','font-size':10,'font-family':'IBM Plex Mono'}),'round'));
+    if(hist.length>1){
+      const maxR=Math.max(...hist,0.05),maxN=Math.max(60,hist.length);
+      let ds='';hist.forEach((v,k)=>{const x=pad+(k/maxN)*(W-pad-14),y=base-(v/maxR)*(base-20);ds+=(k?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';});
+      resSVG.appendChild(el('path',{d:ds,fill:'none',stroke:'var(--good)','stroke-width':2.5}));
+      const lx=pad+((hist.length-1)/maxN)*(W-pad-14),ly=base-(hist[hist.length-1]/maxR)*(base-20);
+      resSVG.appendChild(el('circle',{cx:lx,cy:ly,r:4,fill:'var(--good)'}));
+    }
+  }
+  slider.addEventListener('input',()=>{rho=+slider.value/100;rhoLab.textContent=rho.toFixed(1);reset();});
+  playBtn.addEventListener('click',()=>{playing=!playing;playBtn.textContent=playing?'⏸ Pause':'▶ Play';});
+  document.getElementById('cd-reset').addEventListener('click',reset);
+  timer=setInterval(()=>{if(!playing)return;if(round<140){admmRound();draw();}},220);
+  reset();
+}
+
+/* ============================================================
+   PAGE 5 — SECURE AGGREGATION
    ============================================================ */
 function initSA(){
   const N=4,names=["D1","D2","D3","D4"];
@@ -801,7 +1175,7 @@ function initSA(){
 }
 
 /* ============================================================
-   PAGE 5 — DIFFERENTIAL PRIVACY
+   PAGE 6 — DIFFERENTIAL PRIVACY
    ============================================================ */
 function initDP(){
   const curves=document.getElementById('dp-curves'),side=document.getElementById('dp-side');
